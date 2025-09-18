@@ -82,17 +82,17 @@ def generate_future_predictions_for_item(item_name, price_history, days_to_predi
 # 🧭 사이드바 UI: 페이지 네비게이션 메뉴 (DOCX 파일 기반)
 # ==============================================================================
 with st.sidebar:
-    st.image("https://placehold.co/300x100/FFFFFF/333333?text=OUR+LOGO&font=Inter", use_container_width=True)
+    st.image("https://placehold.co/300x100/FFFFFF/333333?text=OUR+LOGO&font=Inter", width='stretch')
     # st.session_state를 이용하여 현재 페이지 상태를 저장하고, 버튼 클릭으로 변경합니다.
-    if st.button("🏠 메인 대시보드", use_container_width=True):
+    if st.button("🏠 메인 대시보드", width='stretch'):
         st.session_state.page = "main"
         st.rerun() 
     
-    if st.button("📊 원가 분석", use_container_width=True):
+    if st.button("📊 원가 분석", width='stretch'):
         st.session_state.page = "cost_analysis"
         st.rerun()
 
-    if st.button("💡 서비스 소개", use_container_width=True):
+    if st.button("💡 서비스 소개", width='stretch'):
         st.session_state.page = "about"
         st.rerun()
 
@@ -142,7 +142,7 @@ def main_dashboard():
                     change_text = "오를 전망" if future_change > 0 else "내릴 전망"
                     st.markdown(f"<h2 style='display: inline;'>{int(predicted_price):,}원</h2> <span style='color:{price_color};'>{price_arrow} {int(abs(future_change)):,}</span>", unsafe_allow_html=True)
                     st.markdown(f"<p style='margin-top:0.5rem;'>현재보다 {int(abs(future_change)):,}원 {change_text}이에요.</p>", unsafe_allow_html=True)
-                if st.button(f"상세 예측 보기", key=f"details_{item_name}", use_container_width=True):
+                if st.button(f"상세 예측 보기", key=f"details_{item_name}", width='stretch'):
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
     st.divider()
@@ -190,7 +190,7 @@ def main_dashboard():
         except Exception as e:
             st.error(f"구매 추천 데이터를 처리하는 중 오류가 발생했습니다: {str(e)}")
     
-    if st.button("🌾 농산물 바로 구매하러 가기", use_container_width=True):
+    if st.button("🌾 농산물 바로 구매하러 가기", width='stretch'):
         st.toast("식자재 구매 서비스 페이지로 이동합니다.(준비중이예요)")
 
 # ==============================================================================
@@ -219,7 +219,7 @@ def cost_analysis_page():
     with calc_cols[1]:
         st.write("") # 여백
         st.write("") # 여백
-        if st.button("마진율 계산하기", use_container_width=True):
+        if st.button("마진율 계산하기", width='stretch'):
             total_cost = food_cost + labor_cost + rent_cost
             operating_profit = sales - total_cost
             profit_margin = (operating_profit / sales) * 100 if sales > 0 else 0
@@ -290,7 +290,7 @@ def detail_page():
     connected_predictions = pd.concat([last_history_point, predictions], ignore_index=True)
     fig.add_trace(go.Scatter(x=connected_predictions['날짜'], y=connected_predictions['가격'], mode='lines', name='예측 데이터', line=dict(color='royalblue', width=3)))
     fig.update_layout(title=dict(text=f'{item_name} ({unit}) 가격 추이 및 예측', x=0.5), yaxis_title=f'가격 (원/{unit})', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), height=500)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
 
     # 간단한 요약 지표
     current_price = int(price_history['가격'].iloc[-1])
