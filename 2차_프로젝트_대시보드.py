@@ -114,6 +114,10 @@ def main_dashboard():
     for item_name, emoji in items.items():
         with summary_cols.pop(0): # Use pop to iterate through columns
             history = load_and_prepare_data(item_name)
+            # 데이터 검증 추가
+            if history.empty or len(history) == 0:
+                st.error(f"{item_name} 데이터를 로드할 수 없습니다.")
+                continue
             current_price = history['가격'].iloc[-1]
             with st.container(border=True):
                 st.markdown(f"<h5>{emoji} {item_name} ({price_units[item_name]})</h5>", unsafe_allow_html=True)
@@ -256,6 +260,14 @@ def detail_page():
     else:
         price_history = load_and_prepare_data(item_name)
         predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
+    
+    # 데이터 검증
+    if price_history.empty or len(price_history) == 0:
+        st.error(f"{item_name} 데이터를 로드할 수 없습니다.")
+        return
+    if predictions.empty or len(predictions) == 0:
+        st.error(f"{item_name} 예측 데이터를 생성할 수 없습니다.")
+        return
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=price_history['날짜'].tail(60), y=price_history['가격'].tail(60), mode='lines', name='과거 데이터', line=dict(color='darkgrey', width=2)))

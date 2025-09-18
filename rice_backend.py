@@ -110,8 +110,15 @@ def get_rice_history(days: int = 365) -> pd.DataFrame:
     try:
         # 완전한 데이터셋에서 쌀 가격만 추출
         full_data = _load_all_data()
+        if full_data.empty or '가격' not in full_data.columns:
+            raise ValueError("데이터가 비어있거나 가격 컬럼이 없습니다")
         hist = full_data[['날짜', '가격']].copy()
-    except Exception:
+        # 가격 데이터 검증
+        hist = hist.dropna(subset=['가격'])
+        if hist.empty:
+            raise ValueError("유효한 가격 데이터가 없습니다")
+    except Exception as e:
+        print(f"데이터 로드 오류: {e}")
         dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
         prices = np.full(days, 52000.0)
         return pd.DataFrame({'날짜': pd.to_datetime(dates), '가격': prices})
