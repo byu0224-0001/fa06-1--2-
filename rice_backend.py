@@ -545,8 +545,9 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
             # DLinear 예측 추가 (학습 시와 동일하게)
-            # DLinear 예측이 필요한 경우 (44개 피처 중 마지막 1개)
-            if len(feature_cols) == 44 and x_next.shape[1] == 43:
+            # 모델이 44개 피처를 기대하는데 현재 43개인 경우 DLinear 예측 추가
+            if model.num_features() == 44 and x_next.shape[1] == 43:
+                print("DLinear 예측 추가 중...")
                 # DLinear 예측을 실제로 생성
                 try:
                     # DLinear 모델 로드
@@ -559,7 +560,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                         sequence_length = 30
                         if len(tmp_supervised) >= sequence_length:
                             # 마지막 30개 행으로 시퀀스 생성
-                            seq_data = tmp_supervised[feature_cols[:-1]].iloc[-sequence_length:].values  # dlinear_prediction 제외
+                            seq_data = tmp_supervised[feature_cols].iloc[-sequence_length:].values
                             seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
                             
                             with torch.no_grad():
@@ -576,7 +577,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 print(f"DLinear 예측 추가: {dlinear_pred}")
             
             # 피처 개수 검증 및 조정
-            expected_features = len(feature_cols)
+            expected_features = model.num_features()
             actual_features = x_next.shape[1]
             if actual_features != expected_features:
                 print(f"피처 개수 불일치: 예상 {expected_features}, 실제 {actual_features}")
@@ -590,7 +591,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                     x_next = x_next.iloc[:, :expected_features]
                 
                 # 피처 순서 정렬 (feature_cols 순서대로)
-                x_next = x_next.reindex(columns=feature_cols, fill_value=0.0)
+                if 'dlinear_prediction' in x_next.columns:
+                    # dlinear_prediction을 마지막으로 이동
+                    cols = [c for c in x_next.columns if c != 'dlinear_prediction'] + ['dlinear_prediction']
+                    x_next = x_next[cols]
             
             
             if scaler is not None:
