@@ -5,13 +5,66 @@ import pandas as pd
 
 try:
     import xgboost as xgb
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler
     import joblib
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from scipy.signal import butter, filtfilt
 except Exception:
     xgb = None
     StandardScaler = None
+    MinMaxScaler = None
     joblib = None
+    torch = None
+    nn = None
+    optim = None
+    butter = None
+    filtfilt = None
 
+
+# -------------------------
+# DLinear 모델 정의 (원래 노트북에서 이식)
+# -------------------------
+class MovingAverage(nn.Module):
+    def __init__(self, kernel_size, stride=1):
+        super(MovingAverage, self).__init__()
+        self.kernel_size = kernel_size
+        self.avg = nn.AvgPool1d(kernel_size=kernel_size, stride=stride, padding=0)
+
+    def forward(self, x):
+        front = x[:, 0:1, :].repeat(1, (self.kernel_size - 1) // 2, 1)
+        end = x[:, -1:, :].repeat(1, (self.kernel_size - 1) // 2, 1)
+        x = torch.cat([front, x, end], dim=1)
+        x = self.avg(x.permute(0, 2, 1))
+        x = x.permute(0, 2, 1)
+        return x
+
+class DLinear(nn.Module):
+    def __init__(self, input_length, output_length, input_dim, kernel_size=25):
+        super(DLinear, self).__init__()
+        self.input_length = input_length
+        self.output_length = output_length
+        
+        self.moving_avg = MovingAverage(kernel_size)
+        self.linear_seasonal = nn.Linear(input_length, output_length)
+        self.linear_trend = nn.Linear(input_length, output_length)
+        self.regression_layer = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        seasonal_init = x
+        trend_init = self.moving_avg(x)
+        seasonal_init = seasonal_init - trend_init
+
+        seasonal_output = self.linear_seasonal(seasonal_init.permute(0, 2, 1))
+        trend_output = self.linear_trend(trend_init.permute(0, 2, 1))
+        
+        seasonal_output = seasonal_output.permute(0, 2, 1)
+        trend_output = trend_output.permute(0, 2, 1)
+        
+        output = seasonal_output + trend_output
+        output = self.regression_layer(output)
+        return output
 
 # -------------------------
 # 데이터 로드 및 전처리 (모든 변수 포함)
@@ -153,10 +206,50 @@ def _add_lag_rolling(df: pd.DataFrame) -> pd.DataFrame:
             df[f'{col}_ma_7'] = df[col].rolling(7, min_periods=1).mean()
     return df
 
+def _add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
+    """고급 피처 엔지니어링 (원래 노트북에서 이식)"""
+    df = df.copy()
+    
+    # 1. 가격 변화율
+    df['price_diff'] = df['가격'].diff()
+    df['price_change_rate'] = df['가격'].pct_change()
+    
+    # 2. 롤링 통계
+    for window in [7, 14, 30]:
+        df[f'price_std_{window}'] = df['가격'].rolling(window, min_periods=1).std()
+        df[f'price_min_{window}'] = df['가격'].rolling(window, min_periods=1).min()
+        df[f'price_max_{window}'] = df['가격'].rolling(window, min_periods=1).max()
+    
+    # 3. 저주파 필터 (트렌드 추출)
+    if butter is not None and filtfilt is not None:
+        try:
+            b, a = butter(4, 0.1, btype='low')
+            df['price_trend'] = filtfilt(b, a, df['가격'].fillna(method='ffill').values)
+        except:
+            df['price_trend'] = df['가격'].rolling(30, min_periods=1).mean()
+    else:
+        df['price_trend'] = df['가격'].rolling(30, min_periods=1).mean()
+    
+    # 4. 정부 개입 확률 (원래 노트북의 고급 피처)
+    df['prob_intervention_by_change'] = np.where(
+        df['price_change_rate'] > 0.05, 0.8,  # 5% 이상 상승 시 개입 확률 80%
+        np.where(df['price_change_rate'] < -0.05, 0.2, 0.5)  # 5% 이상 하락 시 개입 확률 20%
+    )
+    
+    # 5. 이동평균 기반 방출 확률
+    ma_30 = df['가격'].rolling(30, min_periods=1).mean()
+    df['prob_release_by_ma'] = np.where(
+        df['가격'] > ma_30 * 1.1, 0.7,  # 30일 평균 대비 10% 이상 높으면 방출 확률 70%
+        np.where(df['가격'] < ma_30 * 0.9, 0.3, 0.5)  # 30일 평균 대비 10% 이상 낮으면 방출 확률 30%
+    )
+    
+    return df
+
 
 def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df = _add_time_features(df)
     df = _add_lag_rolling(df)
+    df = _add_advanced_features(df)
     df['target_next'] = df['가격'].shift(-1)
     df = df.dropna().reset_index(drop=True)
     feature_cols = [c for c in df.columns if c not in ['target_next', '날짜'] and c != '가격']
