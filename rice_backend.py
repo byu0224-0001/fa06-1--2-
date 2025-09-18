@@ -546,7 +546,8 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             
             # DLinear 예측 추가 (학습 시와 동일하게)
             # 모델이 44개 피처를 기대하는데 현재 43개인 경우 DLinear 예측 추가
-            if model.num_features() == 44 and x_next.shape[1] == 43:
+            model_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else len(feature_cols)
+            if model_features == 44 and x_next.shape[1] == 43:
                 print("DLinear 예측 추가 중...")
                 # DLinear 예측을 실제로 생성
                 try:
@@ -577,7 +578,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 print(f"DLinear 예측 추가: {dlinear_pred}")
             
             # 피처 개수 검증 및 조정
-            expected_features = model.num_features()
+            expected_features = model_features
             actual_features = x_next.shape[1]
             if actual_features != expected_features:
                 print(f"피처 개수 불일치: 예상 {expected_features}, 실제 {actual_features}")
