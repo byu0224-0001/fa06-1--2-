@@ -510,6 +510,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
         # 피처 컬럼명이 없으면 새로 생성
         if feature_cols is None:
             _, feature_cols = _build_supervised(full_data)
+        
+        # 피처 개수 확인
+        print(f"학습된 모델 피처 개수: {len(feature_cols)}")
+        print(f"피처 목록: {feature_cols[:10]}...")  # 처음 10개만 출력
             
         for _ in range(days_to_predict):
             next_date = df_work['날짜'].iloc[-1] + timedelta(days=1)
@@ -531,18 +535,28 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             tmp = _add_lag_rolling(tmp)
             tmp = _add_advanced_features(tmp)
             
-            # 학습 시 사용한 피처 컬럼만 선택 (순서도 동일하게)
-            # 누락된 피처가 있으면 기본값으로 채우기
-            x_next = pd.DataFrame()
-            for col in feature_cols:
-                if col in tmp.columns:
-                    x_next[col] = tmp[col].iloc[[-1]]
-                else:
-                    # 누락된 피처는 0으로 채우기
-                    x_next[col] = [0.0]
+            # 학습 시와 동일한 방식으로 피처 생성
+            tmp_supervised, _ = _build_supervised(tmp)
+            if len(tmp_supervised) == 0:
+                # 데이터가 부족한 경우 기본값으로 채우기
+                x_next = pd.DataFrame([[0.0] * len(feature_cols)], columns=feature_cols)
+            else:
+                # 마지막 행의 피처만 선택
+                x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
-            # 피처 순서를 학습 시와 동일하게 맞추기
-            x_next = x_next[feature_cols]
+            # 피처 개수 검증
+            expected_features = len(feature_cols)
+            actual_features = x_next.shape[1]
+            if actual_features != expected_features:
+                print(f"피처 개수 불일치: 예상 {expected_features}, 실제 {actual_features}")
+                # 부족한 피처를 0으로 채우기
+                if actual_features < expected_features:
+                    missing_count = expected_features - actual_features
+                    for i in range(missing_count):
+                        x_next[f'missing_feature_{i}'] = [0.0]
+                # 초과한 피처 제거
+                elif actual_features > expected_features:
+                    x_next = x_next.iloc[:, :expected_features]
             
             if scaler is not None:
                 # 피처 이름 문제를 피하기 위해 numpy 배열로 변환
