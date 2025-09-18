@@ -544,6 +544,37 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 # 마지막 행의 피처만 선택
                 x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
+            # DLinear 예측 추가 (학습 시와 동일하게)
+            # DLinear 예측이 필요한 경우 (44개 피처 중 마지막 1개)
+            if len(feature_cols) == 44 and x_next.shape[1] == 43:
+                # DLinear 예측을 실제로 생성
+                try:
+                    # DLinear 모델 로드
+                    dlinear_model = DLinear(30, 1, x_next.shape[1]).to(_get_device())
+                    if os.path.exists(DLINEAR_PATH):
+                        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+                        dlinear_model.eval()
+                        
+                        # 시퀀스 생성
+                        sequence_length = 30
+                        if len(tmp_supervised) >= sequence_length:
+                            # 마지막 30개 행으로 시퀀스 생성
+                            seq_data = tmp_supervised[feature_cols[:-1]].iloc[-sequence_length:].values  # dlinear_prediction 제외
+                            seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
+                            
+                            with torch.no_grad():
+                                dlinear_pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
+                        else:
+                            dlinear_pred = 0.0
+                    else:
+                        dlinear_pred = 0.0
+                except Exception as e:
+                    print(f"DLinear 예측 생성 실패: {e}")
+                    dlinear_pred = 0.0
+                
+                x_next['dlinear_prediction'] = [dlinear_pred]
+                print(f"DLinear 예측 추가: {dlinear_pred}")
+            
             # 피처 개수 검증
             expected_features = len(feature_cols)
             actual_features = x_next.shape[1]
