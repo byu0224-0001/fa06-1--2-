@@ -82,7 +82,7 @@ def generate_future_predictions_for_item(item_name, price_history, days_to_predi
 # 🧭 사이드바 UI: 페이지 네비게이션 메뉴 (DOCX 파일 기반)
 # ==============================================================================
 with st.sidebar:
-    st.image("https://placehold.co/300x100/FFFFFF/333333?text=OUR+LOGO&font=Inter", use_column_width=True)
+    st.image("https://placehold.co/300x100/FFFFFF/333333?text=OUR+LOGO&font=Inter", use_container_width=True)
     # st.session_state를 이용하여 현재 페이지 상태를 저장하고, 버튼 클릭으로 변경합니다.
     if st.button("🏠 메인 대시보드", use_container_width=True):
         st.session_state.page = "main"
