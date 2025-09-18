@@ -2,14 +2,18 @@ import os
 from datetime import timedelta
 import numpy as np
 import pandas as pd
+import warnings
+warnings.filterwarnings('ignore')
 
 try:
     import xgboost as xgb
     from sklearn.preprocessing import StandardScaler, MinMaxScaler
+    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
     import joblib
     import torch
     import torch.nn as nn
     import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
     from scipy.signal import butter, filtfilt
 except Exception:
     xgb = None
@@ -19,12 +23,31 @@ except Exception:
     torch = None
     nn = None
     optim = None
+    DataLoader = None
+    TensorDataset = None
     butter = None
     filtfilt = None
 
+# -------------------------
+# 전역 변수 및 캐싱 (메모리 효율성)
+# -------------------------
+_CACHED_DATA = None
+_DEVICE = None
+
+def _get_device():
+    """GPU 사용 가능 여부 확인 및 디바이스 설정"""
+    global _DEVICE
+    if _DEVICE is None:
+        if torch is not None and torch.cuda.is_available():
+            _DEVICE = torch.device('cuda')
+            print("GPU 사용: CUDA")
+        else:
+            _DEVICE = torch.device('cpu')
+            print("CPU 사용")
+    return _DEVICE
 
 # -------------------------
-# DLinear 모델 정의 (원래 노트북에서 이식)
+# DLinear 모델 정의 (원본 노트북과 동일)
 # -------------------------
 class MovingAverage(nn.Module):
     def __init__(self, kernel_size, stride=1):
@@ -67,10 +90,15 @@ class DLinear(nn.Module):
         return output
 
 # -------------------------
-# 데이터 로드 및 전처리 (모든 변수 포함)
+# 데이터 로드 및 전처리 (캐싱으로 최적화)
 # -------------------------
 def _load_all_data() -> pd.DataFrame:
-    """모든 데이터를 로드하고 병합하여 완전한 데이터셋 반환"""
+    """원본 노트북과 동일한 데이터 로드 및 전처리 (캐싱 적용)"""
+    global _CACHED_DATA
+    
+    if _CACHED_DATA is not None:
+        return _CACHED_DATA.copy()
+    
     try:
         # 1) 환율 데이터
         df_exchange = pd.read_csv('exchange_rate.csv')
@@ -129,10 +157,8 @@ def _load_all_data() -> pd.DataFrame:
         # 4) 쌀 데이터 (실제 쌀 CSV 데이터 사용)
         df_rice = pd.read_csv('rice.csv')
         df_rice.columns = [str(c).strip() for c in df_rice.columns]
-        # 쌀 데이터는 이미 올바른 컬럼명을 가지고 있음
         if '가격(20kg)' in df_rice.columns:
             df_rice.rename(columns={'가격(20kg)': '가격'}, inplace=True)
-        # 불필요한 컬럼 제거
         for col in ['품목명','품종명','시장명','지역명']:
             if col in df_rice.columns:
                 df_rice.drop(columns=[col], inplace=True)
@@ -147,8 +173,10 @@ def _load_all_data() -> pd.DataFrame:
     new2 = pd.merge(new, df_weather, how='inner', on='날짜')
     df = pd.merge(new2, df_rice, how='inner', on='날짜')
     df = df.sort_values('날짜').reset_index(drop=True)
+    
+    # 캐싱
+    _CACHED_DATA = df.copy()
     return df
-
 
 def get_rice_history(days: int = 365) -> pd.DataFrame:
     try:
@@ -177,9 +205,8 @@ def get_rice_history(days: int = 365) -> pd.DataFrame:
         hist = hist.tail(days)
     return hist.reset_index(drop=True)
 
-
 # -------------------------
-# 피처 엔지니어링 (모든 변수 활용)
+# 고급 피처 엔지니어링 (원본 노트북과 동일)
 # -------------------------
 def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -188,7 +215,6 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     df['doy_sin'] = np.sin(2 * np.pi * dayofyear / 365.25)
     df['doy_cos'] = np.cos(2 * np.pi * dayofyear / 365.25)
     return df
-
 
 def _add_lag_rolling(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -207,7 +233,7 @@ def _add_lag_rolling(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def _add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
-    """고급 피처 엔지니어링 (원래 노트북에서 이식)"""
+    """고급 피처 엔지니어링 (원본 노트북과 동일)"""
     df = df.copy()
     
     # 1. 가격 변화율
@@ -230,7 +256,7 @@ def _add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df['price_trend'] = df['가격'].rolling(30, min_periods=1).mean()
     
-    # 4. 정부 개입 확률 (원래 노트북의 고급 피처)
+    # 4. 정부 개입 확률 (원본 노트북의 고급 피처)
     df['prob_intervention_by_change'] = np.where(
         df['price_change_rate'] > 0.05, 0.8,  # 5% 이상 상승 시 개입 확률 80%
         np.where(df['price_change_rate'] < -0.05, 0.2, 0.5)  # 5% 이상 하락 시 개입 확률 20%
@@ -245,7 +271,6 @@ def _add_advanced_features(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-
 def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df = _add_time_features(df)
     df = _add_lag_rolling(df)
@@ -255,42 +280,190 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     feature_cols = [c for c in df.columns if c not in ['target_next', '날짜'] and c != '가격']
     return df, feature_cols
 
+# -------------------------
+# DLinear 예측 생성 함수 (원본 노트북과 동일)
+# -------------------------
+def generate_dlinear_predictions(scaled_feature_df, sequence_length, batch_size, model):
+    """스케일링된 피처 데이터프레임을 받아 DLinear 모델의 예측을 생성합니다."""
+    model.eval()
+    device = _get_device()
+    model.to(device)
+    
+    # 1. 데이터로부터 시퀀스 생성
+    sequences = []
+    for i in range(len(scaled_feature_df) - sequence_length + 1):
+        sequences.append(scaled_feature_df.iloc[i:(i + sequence_length)].values)
+    
+    sequences_tensor = torch.tensor(np.array(sequences), dtype=torch.float32).to(device)
+
+    # 2. DataLoader 생성
+    dataset = TensorDataset(sequences_tensor)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    
+    # 3. 모델 예측
+    predictions = []
+    with torch.no_grad():
+        for inputs in dataloader:
+            outputs = model(inputs[0])
+            predictions.extend(outputs.flatten().cpu().numpy())
+            
+    return predictions
 
 # -------------------------
-# 모델 학습/저장/로드
+# 모델 학습/저장/로드 (원본 노트북과 동일한 성능, 최적화)
 # -------------------------
 MODEL_PATH = 'xgb_model.json'
 SCALER_PATH = 'scaler.pkl'
+DLINEAR_PATH = 'best_dlinear_model.pth'
+FEATURE_COLS_PATH = 'feature_cols.pkl'
 
+def _clean_numeric_frame(df):
+    """NaN/Inf 값 정리 (원본 노트북과 동일)"""
+    df = df.copy()
+    for col in df.select_dtypes(include=[np.number]).columns:
+        df[col] = df[col].replace([np.inf, -np.inf], np.nan)
+        median_val = df[col].median()
+        df[col] = df[col].fillna(median_val if not pd.isna(median_val) else 0)
+    return df
 
 def train_model(history: pd.DataFrame) -> None:
-    if xgb is None or StandardScaler is None:
+    """원본 노트북과 동일한 방식으로 모델 학습 (최적화)"""
+    if xgb is None or StandardScaler is None or torch is None:
         return
+    
+    print("모델 학습 시작...")
+    device = _get_device()
+    
     # 완전한 데이터셋으로 학습
     full_data = _load_all_data()
     df_sup, feature_cols = _build_supervised(full_data)
     if len(df_sup) < 50:
+        print("데이터가 부족합니다.")
         return
+    
     X = df_sup[feature_cols]
     y = df_sup['target_next']
+    
+    # 데이터 정리
+    X = _clean_numeric_frame(X)
+    y = _clean_numeric_frame(pd.DataFrame({'target': y}))['target']
+    
+    # 훈련/테스트 분할
+    split_idx = int(len(X) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+    
     # 스케일링
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-    model = xgb.XGBRegressor(
-        objective='reg:squarederror',
-        n_estimators=600,
-        learning_rate=0.05,
-        max_depth=4,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-    )
-    model.fit(X_scaled, y, verbose=False)
-    model.save_model(MODEL_PATH)
-    # 스케일러도 저장
-    if joblib is not None:
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # DLinear 모델 학습 (원본 노트북과 동일한 설정)
+    sequence_length = 30
+    predict_length = 1
+    input_dim = X_train_scaled.shape[1]
+    batch_size = 32
+    
+    dlinear_model = DLinear(sequence_length, predict_length, input_dim).to(device)
+    
+    # 데이터를 시퀀스 형태로 변환
+    def create_sequences(data, seq_len):
+        sequences = []
+        for i in range(len(data) - seq_len + 1):
+            sequences.append(data[i:i+seq_len])
+        return np.array(sequences)
+    
+    X_train_seq = create_sequences(X_train_scaled, sequence_length)
+    y_train_seq = y_train.iloc[sequence_length-1:].values
+    
+    if len(X_train_seq) > 0:
+        X_train_tensor = torch.FloatTensor(X_train_seq).to(device)
+        y_train_tensor = torch.FloatTensor(y_train_seq).unsqueeze(1).to(device)
+        
+        # DLinear 학습 (원본과 동일한 에포크 수)
+        optimizer = optim.Adam(dlinear_model.parameters(), lr=0.001)
+        criterion = nn.MSELoss()
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.1)
+        
+        best_val_loss = float('inf')
+        patience = 10
+        epochs_without_improvement = 0
+        
+        print(f"DLinear 학습 시작 (GPU: {device})...")
+        for epoch in range(100):  # 원본과 동일한 에포크 수
+            dlinear_model.train()
+            optimizer.zero_grad()
+            outputs = dlinear_model(X_train_tensor)
+            loss = criterion(outputs, y_train_tensor)
+            loss.backward()
+            optimizer.step()
+            
+            if epoch % 20 == 0:
+                print(f'DLinear Epoch {epoch}, Loss: {loss.item():.6f}')
+            
+            scheduler.step(loss.item())
+            
+            if loss.item() < best_val_loss:
+                best_val_loss = loss.item()
+                epochs_without_improvement = 0
+                torch.save(dlinear_model.state_dict(), DLINEAR_PATH)
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= patience:
+                    print(f"조기 종료: {epoch} 에포크")
+                    break
+        
+        # DLinear 예측 생성
+        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+        dlinear_model.eval()
+        
+        print("DLinear 예측 생성 중...")
+        dlinear_preds_train = generate_dlinear_predictions(
+            pd.DataFrame(X_train_scaled), sequence_length, batch_size, dlinear_model
+        )
+        
+        # XGBoost 학습 (DLinear 예측 포함)
+        X_train_final = X_train_scaled[sequence_length-1:]
+        X_train_final = np.column_stack([X_train_final, dlinear_preds_train])
+        
+        X_test_seq = create_sequences(X_test_scaled, sequence_length)
+        if len(X_test_seq) > 0:
+            dlinear_preds_test = generate_dlinear_predictions(
+                pd.DataFrame(X_test_scaled), sequence_length, batch_size, dlinear_model
+            )
+            X_test_final = X_test_scaled[sequence_length-1:]
+            X_test_final = np.column_stack([X_test_final, dlinear_preds_test])
+        else:
+            X_test_final = X_test_scaled
+        
+        y_train_final = y_train.iloc[sequence_length-1:]
+        y_test_final = y_test.iloc[sequence_length-1:] if len(X_test_seq) > 0 else y_test
+        
+        # XGBoost 모델 학습 (원본과 동일한 설정)
+        print("XGBoost 학습 중...")
+        xgb_model = xgb.XGBRegressor(
+            objective='reg:squarederror',
+            n_estimators=500,  # 원본과 동일
+            learning_rate=0.05,
+            max_depth=3,
+            subsample=0.7,
+            colsample_bytree=0.7,
+            random_state=42,
+            early_stopping_rounds=50
+        )
+        
+        xgb_model.fit(
+            X_train_final, y_train_final,
+            eval_set=[(X_test_final, y_test_final)],
+            verbose=False
+        )
+        
+        # 모델 저장
+        xgb_model.save_model(MODEL_PATH)
         joblib.dump(scaler, SCALER_PATH)
-
+        joblib.dump(feature_cols, FEATURE_COLS_PATH)
+        
+        print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final))):.2f}")
 
 def _load_model():
     if xgb is None:
@@ -301,21 +474,25 @@ def _load_model():
     m.load_model(MODEL_PATH)
     return m
 
-
 def _load_scaler():
     if joblib is None or not os.path.exists(SCALER_PATH):
         return None
     return joblib.load(SCALER_PATH)
 
+def _load_feature_cols():
+    if joblib is None or not os.path.exists(FEATURE_COLS_PATH):
+        return None
+    return joblib.load(FEATURE_COLS_PATH)
 
 # -------------------------
-# 재귀적 예측 (모든 변수 활용)
+# 재귀적 예측 (원본 노트북과 동일한 성능)
 # -------------------------
 def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
     history = history.sort_values('날짜').reset_index(drop=True)
 
     model = _load_model()
     if model is None:
+        print("모델이 없습니다. 학습을 시작합니다...")
         train_model(history)
         model = _load_model()
 
@@ -324,8 +501,13 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
         full_data = _load_all_data()
         df_work = full_data.copy()
         preds = []
-        # 스케일러 로드
+        # 스케일러 및 피처 컬럼명 로드
         scaler = _load_scaler()
+        feature_cols = _load_feature_cols()
+        
+        # 피처 컬럼명이 없으면 새로 생성
+        if feature_cols is None:
+            _, feature_cols = _build_supervised(full_data)
             
         for _ in range(days_to_predict):
             next_date = df_work['날짜'].iloc[-1] + timedelta(days=1)
@@ -345,8 +527,18 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             tmp = pd.concat([df_work, pd.DataFrame([next_row])], ignore_index=True)
             tmp = _add_time_features(tmp)
             tmp = _add_lag_rolling(tmp)
-            feature_cols = [c for c in tmp.columns if c not in ['날짜', '가격']]
-            x_next = tmp.iloc[[-1]][feature_cols]
+            tmp = _add_advanced_features(tmp)
+            
+            # 학습 시 사용한 피처 컬럼만 선택 (순서도 동일하게)
+            # 누락된 피처가 있으면 기본값으로 채우기
+            x_next = pd.DataFrame()
+            for col in feature_cols:
+                if col in tmp.columns:
+                    x_next[col] = tmp[col].iloc[[-1]]
+                else:
+                    # 누락된 피처는 0으로 채우기
+                    x_next[col] = [0.0]
+            
             if scaler is not None:
                 x_next_scaled = scaler.transform(x_next)
                 y_hat = float(model.predict(x_next_scaled)[0])
