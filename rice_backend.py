@@ -575,7 +575,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 x_next['dlinear_prediction'] = [dlinear_pred]
                 print(f"DLinear 예측 추가: {dlinear_pred}")
             
-            # 피처 개수 검증
+            # 피처 개수 검증 및 조정
             expected_features = len(feature_cols)
             actual_features = x_next.shape[1]
             if actual_features != expected_features:
@@ -588,6 +588,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 # 초과한 피처 제거
                 elif actual_features > expected_features:
                     x_next = x_next.iloc[:, :expected_features]
+                
+                # 피처 순서 정렬 (feature_cols 순서대로)
+                x_next = x_next.reindex(columns=feature_cols, fill_value=0.0)
+            
             
             if scaler is not None:
                 # 피처 이름 문제를 피하기 위해 numpy 배열로 변환
