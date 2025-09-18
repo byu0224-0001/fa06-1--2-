@@ -5,40 +5,112 @@ import pandas as pd
 
 try:
     import xgboost as xgb
+    from sklearn.preprocessing import StandardScaler
+    import joblib
 except Exception:
     xgb = None
+    StandardScaler = None
+    joblib = None
 
 
 # -------------------------
-# 데이터 로드 및 전처리
+# 데이터 로드 및 전처리 (모든 변수 포함)
 # -------------------------
-def _read_rice_history_csv(csv_path: str = 'rice.csv') -> pd.DataFrame:
-    encodings_to_try = ['utf-8-sig', 'utf-8', 'cp949', 'ISO-8859-1']
-    df = None
-    last_error = None
-    for enc in encodings_to_try:
-        try:
-            df = pd.read_csv(csv_path, encoding=enc, encoding_errors='replace')
-            if '날짜' in df.columns and ('가격(20kg)' in df.columns or '가격' in df.columns):
-                break
-        except Exception as e:
-            last_error = e
-            continue
-    if df is None or '날짜' not in df.columns:
-        raise FileNotFoundError(f"{csv_path} 파일을 읽을 수 없습니다. 마지막 오류: {last_error}")
-    df['날짜'] = pd.to_datetime(df['날짜'], errors='coerce')
-    price_col = '가격(20kg)' if '가격(20kg)' in df.columns else '가격'
-    price_history = df.groupby('날짜')[price_col].mean().reset_index().dropna(subset=['날짜'])
-    price_history = price_history.sort_values('날짜')
-    price_history.rename(columns={price_col: '가격'}, inplace=True)
-    price_history['가격'] = pd.to_numeric(price_history['가격'], errors='coerce')
-    price_history = price_history.dropna(subset=['가격'])
-    return price_history.reset_index(drop=True)
+def _load_all_data() -> pd.DataFrame:
+    """모든 데이터를 로드하고 병합하여 완전한 데이터셋 반환"""
+    try:
+        # 1) 환율 데이터
+        df_exchange = pd.read_csv('exchange_rate.csv')
+        df_exchange.columns = [str(c).strip() for c in df_exchange.columns]
+        if '종가' in df_exchange.columns and '환율' not in df_exchange.columns:
+            df_exchange.rename(columns={'종가': '환율'}, inplace=True)
+        if '날짜' not in df_exchange.columns:
+            df_exchange.rename(columns={df_exchange.columns[0]: '날짜'}, inplace=True)
+        df_exchange['날짜'] = pd.to_datetime(df_exchange['날짜'], errors='coerce')
+        if '환율' in df_exchange.columns:
+            df_exchange['환율'] = pd.to_numeric(df_exchange['환율'].astype(str).str.replace(',', ''), errors='coerce')
+        df_exchange = df_exchange.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+    except Exception:
+        df_exchange = pd.DataFrame({'날짜': [pd.Timestamp.today()], '환율': [1300.0]})
+
+    try:
+        # 2) 유가 데이터
+        df_oil = pd.read_csv('oil.csv', encoding='cp949')
+        df_oil.columns = [str(c).strip() for c in df_oil.columns]
+        if len(df_oil.columns) >= 2:
+            df_oil = df_oil.rename(columns={df_oil.columns[0]: '날짜', df_oil.columns[1]: '유가'})
+        if '날짜' not in df_oil.columns:
+            df_oil.rename(columns={df_oil.columns[0]: '날짜'}, inplace=True)
+        df_oil['날짜'] = pd.to_datetime(df_oil['날짜'], errors='coerce')
+        df_oil = df_oil.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+    except Exception:
+        df_oil = pd.DataFrame({'날짜': [pd.Timestamp.today()], '유가': [80.0]})
+
+    try:
+        # 3) 날씨 데이터
+        df_weather = pd.read_csv('top_weather_features.csv')
+        df_weather.columns = [str(c).strip() for c in df_weather.columns]
+        if '누적강수량' in df_weather.columns:
+            df_weather.drop('누적강수량', axis=1, inplace=True)
+        name_map = {
+            'date': '날짜', '일자': '날짜', '날짜': '날짜',
+            '누적평균기온': '누적평균기온', '평균기온': '누적평균기온', '기온': '누적평균기온',
+            '누적일조합': '누적일조합', '일조합': '누적일조합', '일조시간': '누적일조합'
+        }
+        df_weather = df_weather.rename(columns={c: name_map.get(c, c) for c in df_weather.columns})
+        if '날짜' not in df_weather.columns:
+            df_weather.rename(columns={df_weather.columns[0]: '날짜'}, inplace=True)
+        if '누적평균기온' not in df_weather.columns:
+            df_weather['누적평균기온'] = np.nan
+        if '누적일조합' not in df_weather.columns:
+            df_weather['누적일조합'] = np.nan
+        df_weather['날짜'] = pd.to_datetime(df_weather['날짜'], errors='coerce')
+        if df_weather.index.name == '날짜' or ('날짜' in (list(df_weather.index.names) if df_weather.index.names is not None else [])):
+            df_weather = df_weather.reset_index()
+        df_weather = df_weather.loc[:, ~df_weather.columns.duplicated()]
+        df_weather = df_weather.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+    except Exception:
+        df_weather = pd.DataFrame({'날짜': [pd.Timestamp.today()], '누적평균기온': [15.0], '누적일조합': [6.0]})
+
+    try:
+        # 4) 쌀 데이터 (감자 도매 데이터 사용)
+        df_rice = pd.read_excel('감자_도매_데이터.xlsx')
+        df_rice.columns = [str(c).strip() for c in df_rice.columns]
+        name_map_rice = {
+            '일자': '날짜', 'date': '날짜', '날짜': '날짜',
+            '가격': '가격', '평균가격': '가격', '도매가격': '가격', '소매가격': '가격'
+        }
+        df_rice = df_rice.rename(columns={c: name_map_rice.get(c, c) for c in df_rice.columns})
+        for col in ['품목명','품종명','시장명','지역명']:
+            if col in df_rice.columns:
+                df_rice.drop(columns=[col], inplace=True)
+        if '날짜' not in df_rice.columns:
+            df_rice.rename(columns={df_rice.columns[0]: '날짜'}, inplace=True)
+        if '가격' not in df_rice.columns:
+            num_cols = df_rice.select_dtypes(include='number').columns.tolist()
+            if num_cols:
+                df_rice.rename(columns={num_cols[0]: '가격'}, inplace=True)
+            else:
+                df_rice['가격'] = np.nan
+        df_rice['날짜'] = pd.to_datetime(df_rice['날짜'], errors='coerce')
+        df_rice['가격'] = pd.to_numeric(df_rice['가격'], errors='coerce')
+        df_rice = df_rice.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+    except Exception:
+        df_rice = pd.DataFrame({'날짜': [pd.Timestamp.today()], '가격': [52000.0]})
+
+    # 5) 모든 데이터 병합
+    new = pd.merge(df_exchange, df_oil, how='inner', on='날짜')
+    new2 = pd.merge(new, df_weather, how='inner', on='날짜')
+    df = pd.merge(new2, df_rice, how='inner', on='날짜')
+    df = df.sort_values('날짜').reset_index(drop=True)
+    return df
 
 
 def get_rice_history(days: int = 365) -> pd.DataFrame:
     try:
-        hist = _read_rice_history_csv()
+        # 완전한 데이터셋에서 쌀 가격만 추출
+        full_data = _load_all_data()
+        hist = full_data[['날짜', '가격']].copy()
     except Exception:
         dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
         prices = np.full(days, 52000.0)
@@ -49,7 +121,7 @@ def get_rice_history(days: int = 365) -> pd.DataFrame:
 
 
 # -------------------------
-# 피처 엔지니어링(노트북 이식)
+# 피처 엔지니어링 (모든 변수 활용)
 # -------------------------
 def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -62,10 +134,18 @@ def _add_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
 def _add_lag_rolling(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+    # 쌀 가격 래그/이동평균
     for lag in [1, 7, 14, 30]:
-        df[f'lag_{lag}'] = df['가격'].shift(lag)
-    df['ma_7'] = df['가격'].rolling(7, min_periods=1).mean()
-    df['ma_30'] = df['가격'].rolling(30, min_periods=1).mean()
+        df[f'price_lag_{lag}'] = df['가격'].shift(lag)
+    df['price_ma_7'] = df['가격'].rolling(7, min_periods=1).mean()
+    df['price_ma_30'] = df['가격'].rolling(30, min_periods=1).mean()
+    
+    # 다른 변수들의 래그/이동평균
+    for col in ['환율', '유가', '누적평균기온', '누적일조합']:
+        if col in df.columns:
+            for lag in [1, 7, 14]:
+                df[f'{col}_lag_{lag}'] = df[col].shift(lag)
+            df[f'{col}_ma_7'] = df[col].rolling(7, min_periods=1).mean()
     return df
 
 
@@ -82,16 +162,22 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 # 모델 학습/저장/로드
 # -------------------------
 MODEL_PATH = 'xgb_model.json'
+SCALER_PATH = 'scaler.pkl'
 
 
 def train_model(history: pd.DataFrame) -> None:
-    if xgb is None:
+    if xgb is None or StandardScaler is None:
         return
-    df_sup, feature_cols = _build_supervised(history)
+    # 완전한 데이터셋으로 학습
+    full_data = _load_all_data()
+    df_sup, feature_cols = _build_supervised(full_data)
     if len(df_sup) < 50:
         return
     X = df_sup[feature_cols]
     y = df_sup['target_next']
+    # 스케일링
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
     model = xgb.XGBRegressor(
         objective='reg:squarederror',
         n_estimators=600,
@@ -101,8 +187,11 @@ def train_model(history: pd.DataFrame) -> None:
         colsample_bytree=0.8,
         random_state=42,
     )
-    model.fit(X, y, verbose=False)
+    model.fit(X_scaled, y, verbose=False)
     model.save_model(MODEL_PATH)
+    # 스케일러도 저장
+    if joblib is not None:
+        joblib.dump(scaler, SCALER_PATH)
 
 
 def _load_model():
@@ -115,8 +204,14 @@ def _load_model():
     return m
 
 
+def _load_scaler():
+    if joblib is None or not os.path.exists(SCALER_PATH):
+        return None
+    return joblib.load(SCALER_PATH)
+
+
 # -------------------------
-# 재귀적 예측
+# 재귀적 예측 (모든 변수 활용)
 # -------------------------
 def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
     history = history.sort_values('날짜').reset_index(drop=True)
@@ -127,18 +222,42 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
         model = _load_model()
 
     if model is not None:
-        df_work = history.copy()
+        # 완전한 데이터셋으로 작업
+        full_data = _load_all_data()
+        df_work = full_data.copy()
         preds = []
+        # 스케일러 로드
+        scaler = _load_scaler()
+            
         for _ in range(days_to_predict):
             next_date = df_work['날짜'].iloc[-1] + timedelta(days=1)
-            tmp = pd.concat([df_work, pd.DataFrame({'날짜': [next_date], '가격': [df_work['가격'].iloc[-1]]})], ignore_index=True)
+            # 다음 날의 모든 변수 예측 (간단한 드리프트)
+            next_row = {}
+            for col in ['환율', '유가', '누적평균기온', '누적일조합']:
+                if col in df_work.columns:
+                    last_val = df_work[col].iloc[-1]
+                    # 간단한 드리프트 (실제로는 각 변수별 모델이 필요)
+                    drift = 0.001  # 0.1% 변화
+                    next_row[col] = last_val * (1 + drift)
+                else:
+                    next_row[col] = df_work[col].iloc[-1] if col in df_work.columns else 0
+            next_row['날짜'] = next_date
+            next_row['가격'] = df_work['가격'].iloc[-1]  # 임시값
+            
+            tmp = pd.concat([df_work, pd.DataFrame([next_row])], ignore_index=True)
             tmp = _add_time_features(tmp)
             tmp = _add_lag_rolling(tmp)
             feature_cols = [c for c in tmp.columns if c not in ['날짜', '가격']]
             x_next = tmp.iloc[[-1]][feature_cols]
-            y_hat = float(model.predict(x_next)[0])
+            if scaler is not None:
+                x_next_scaled = scaler.transform(x_next)
+                y_hat = float(model.predict(x_next_scaled)[0])
+            else:
+                y_hat = float(model.predict(x_next)[0])
             preds.append({'날짜': next_date, '가격': y_hat})
-            df_work = pd.concat([df_work, pd.DataFrame({'날짜': [next_date], '가격': [y_hat]})], ignore_index=True)
+            # 예측된 가격으로 업데이트
+            next_row['가격'] = y_hat
+            df_work = pd.concat([df_work, pd.DataFrame([next_row])], ignore_index=True)
         return pd.DataFrame(preds)
 
     # 모델이 없거나 학습 불가한 경우: 드리프트 기반(결정론)
@@ -156,5 +275,3 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
         preds.append({'날짜': next_date, '가격': float(current)})
         last_date = next_date
     return pd.DataFrame(preds)
-
-
