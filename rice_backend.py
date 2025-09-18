@@ -277,6 +277,38 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df = _add_advanced_features(df)
     df['target_next'] = df['가격'].shift(-1)
     df = df.dropna().reset_index(drop=True)
+    
+    # DLinear 예측 추가 (학습 시와 동일하게)
+    if len(df) >= 30:  # 충분한 데이터가 있는 경우에만
+        try:
+            # DLinear 모델 로드
+            dlinear_model = DLinear(30, 1, 43).to(_get_device())  # 43개 피처로 학습
+            if os.path.exists(DLINEAR_PATH):
+                dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+                dlinear_model.eval()
+                
+                # 시퀀스 생성 및 예측
+                sequence_length = 30
+                dlinear_preds = []
+                for i in range(len(df)):
+                    if i >= sequence_length - 1:
+                        seq_data = df.iloc[i-sequence_length+1:i+1].drop(columns=['target_next', '날짜', '가격']).values
+                        seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
+                        with torch.no_grad():
+                            pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
+                        dlinear_preds.append(pred)
+                    else:
+                        dlinear_preds.append(0.0)
+                
+                df['dlinear_prediction'] = dlinear_preds
+            else:
+                df['dlinear_prediction'] = 0.0
+        except Exception as e:
+            print(f"DLinear 예측 생성 실패: {e}")
+            df['dlinear_prediction'] = 0.0
+    else:
+        df['dlinear_prediction'] = 0.0
+    
     feature_cols = [c for c in df.columns if c not in ['target_next', '날짜'] and c != '가격']
     # 피처 컬럼을 알파벳 순으로 정렬하여 일관성 보장
     feature_cols = sorted(feature_cols)
@@ -535,7 +567,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             tmp = _add_lag_rolling(tmp)
             tmp = _add_advanced_features(tmp)
             
-            # 학습 시와 동일한 방식으로 피처 생성
+            # 학습 시와 동일한 방식으로 피처 생성 (DLinear 예측 포함)
             tmp_supervised, _ = _build_supervised(tmp)
             if len(tmp_supervised) == 0:
                 # 데이터가 부족한 경우 기본값으로 채우기
@@ -544,40 +576,8 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 # 마지막 행의 피처만 선택
                 x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
-            # DLinear 예측 추가 (학습 시와 동일하게)
-            # 모델이 44개 피처를 기대하는데 현재 43개인 경우 DLinear 예측 추가
-            model_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else len(feature_cols)
-            if model_features == 44 and x_next.shape[1] == 43:
-                print("DLinear 예측 추가 중...")
-                # DLinear 예측을 실제로 생성
-                try:
-                    # DLinear 모델 로드
-                    dlinear_model = DLinear(30, 1, x_next.shape[1]).to(_get_device())
-                    if os.path.exists(DLINEAR_PATH):
-                        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
-                        dlinear_model.eval()
-                        
-                        # 시퀀스 생성
-                        sequence_length = 30
-                        if len(tmp_supervised) >= sequence_length:
-                            # 마지막 30개 행으로 시퀀스 생성
-                            seq_data = tmp_supervised[feature_cols].iloc[-sequence_length:].values
-                            seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
-                            
-                            with torch.no_grad():
-                                dlinear_pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
-                        else:
-                            dlinear_pred = 0.0
-                    else:
-                        dlinear_pred = 0.0
-                except Exception as e:
-                    print(f"DLinear 예측 생성 실패: {e}")
-                    dlinear_pred = 0.0
-                
-                x_next['dlinear_prediction'] = [dlinear_pred]
-                print(f"DLinear 예측 추가: {dlinear_pred}")
-            
             # 피처 개수 검증 및 조정
+            model_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else len(feature_cols)
             expected_features = model_features
             actual_features = x_next.shape[1]
             if actual_features != expected_features:
@@ -592,10 +592,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                     x_next = x_next.iloc[:, :expected_features]
                 
                 # 피처 순서 정렬 (feature_cols 순서대로)
-                if 'dlinear_prediction' in x_next.columns:
-                    # dlinear_prediction을 마지막으로 이동
-                    cols = [c for c in x_next.columns if c != 'dlinear_prediction'] + ['dlinear_prediction']
-                    x_next = x_next[cols]
+                x_next = x_next.reindex(columns=feature_cols, fill_value=0.0)
             
             
             if scaler is not None:
