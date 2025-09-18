@@ -30,8 +30,12 @@ def load_and_prepare_data(item_name):
     # 쌀: 백엔드 원시 단위 그대로 사용 (스케일링 없음)
     if item_name == "쌀":
         try:
-            return get_rice_history(days=365)
-        except FileNotFoundError:
+            data = get_rice_history(days=365)
+            if data.empty or len(data) == 0:
+                raise ValueError("빈 데이터 반환")
+            return data
+        except Exception as e:
+            print(f"쌀 데이터 로드 오류: {e}")
             dates = pd.to_datetime(pd.date_range(end=datetime.today(), periods=365))
             prices = np.full(365, base_price)
             return pd.DataFrame({'날짜': dates, '가격': prices})
