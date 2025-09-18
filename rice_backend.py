@@ -278,36 +278,8 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df['target_next'] = df['가격'].shift(-1)
     df = df.dropna().reset_index(drop=True)
     
-    # DLinear 예측 추가 (학습 시와 동일하게)
-    if len(df) >= 30:  # 충분한 데이터가 있는 경우에만
-        try:
-            # DLinear 모델 로드
-            dlinear_model = DLinear(30, 1, 43).to(_get_device())  # 43개 피처로 학습
-            if os.path.exists(DLINEAR_PATH):
-                dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
-                dlinear_model.eval()
-                
-                # 시퀀스 생성 및 예측
-                sequence_length = 30
-                dlinear_preds = []
-                for i in range(len(df)):
-                    if i >= sequence_length - 1:
-                        seq_data = df.iloc[i-sequence_length+1:i+1].drop(columns=['target_next', '날짜', '가격']).values
-                        seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
-                        with torch.no_grad():
-                            pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
-                        dlinear_preds.append(pred)
-                    else:
-                        dlinear_preds.append(0.0)
-                
-                df['dlinear_prediction'] = dlinear_preds
-            else:
-                df['dlinear_prediction'] = 0.0
-        except Exception as e:
-            print(f"DLinear 예측 생성 실패: {e}")
-            df['dlinear_prediction'] = 0.0
-    else:
-        df['dlinear_prediction'] = 0.0
+    # DLinear 예측 제거 - 43개 피처로 일관성 유지
+    # 기존 모델이 43개 피처로 학습되었으므로 43개로 통일
     
     feature_cols = [c for c in df.columns if c not in ['target_next', '날짜'] and c != '가격']
     # 피처 컬럼을 알파벳 순으로 정렬하여 일관성 보장
@@ -447,26 +419,15 @@ def train_model(history: pd.DataFrame) -> None:
                     print(f"조기 종료: {epoch} 에포크")
                     break
         
-        # DLinear 예측 생성
-        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
-        dlinear_model.eval()
+        # DLinear 예측 제거 - 43개 피처로 일관성 유지
+        # 기존 모델이 43개 피처로 학습되었으므로 43개로 통일
         
-        print("DLinear 예측 생성 중...")
-        dlinear_preds_train = generate_dlinear_predictions(
-            pd.DataFrame(X_train_scaled), sequence_length, batch_size, dlinear_model
-        )
-        
-        # XGBoost 학습 (DLinear 예측 포함)
+        # XGBoost 학습 (DLinear 예측 제외)
         X_train_final = X_train_scaled[sequence_length-1:]
-        X_train_final = np.column_stack([X_train_final, dlinear_preds_train])
         
         X_test_seq = create_sequences(X_test_scaled, sequence_length)
         if len(X_test_seq) > 0:
-            dlinear_preds_test = generate_dlinear_predictions(
-                pd.DataFrame(X_test_scaled), sequence_length, batch_size, dlinear_model
-            )
             X_test_final = X_test_scaled[sequence_length-1:]
-            X_test_final = np.column_stack([X_test_final, dlinear_preds_test])
         else:
             X_test_final = X_test_scaled
         
