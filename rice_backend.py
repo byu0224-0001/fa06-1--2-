@@ -278,6 +278,8 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     df['target_next'] = df['가격'].shift(-1)
     df = df.dropna().reset_index(drop=True)
     feature_cols = [c for c in df.columns if c not in ['target_next', '날짜'] and c != '가격']
+    # 피처 컬럼을 알파벳 순으로 정렬하여 일관성 보장
+    feature_cols = sorted(feature_cols)
     return df, feature_cols
 
 # -------------------------
@@ -539,8 +541,13 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                     # 누락된 피처는 0으로 채우기
                     x_next[col] = [0.0]
             
+            # 피처 순서를 학습 시와 동일하게 맞추기
+            x_next = x_next[feature_cols]
+            
             if scaler is not None:
-                x_next_scaled = scaler.transform(x_next)
+                # 피처 이름 문제를 피하기 위해 numpy 배열로 변환
+                x_next_array = x_next.values
+                x_next_scaled = scaler.transform(x_next_array)
                 y_hat = float(model.predict(x_next_scaled)[0])
             else:
                 y_hat = float(model.predict(x_next)[0])
