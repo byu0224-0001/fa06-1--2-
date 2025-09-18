@@ -54,8 +54,8 @@ def _load_all_data() -> pd.DataFrame:
             df_weather.drop('누적강수량', axis=1, inplace=True)
         name_map = {
             'date': '날짜', '일자': '날짜', '날짜': '날짜',
-            '누적평균기온': '누적평균기온', '평균기온': '누적평균기온', '기온': '누적평균기온',
-            '누적일조합': '누적일조합', '일조합': '누적일조합', '일조시간': '누적일조합'
+            '누적평균기온': '누적평균기온', '평균기온': '누적평균기온', '기온': '누적평균기온', 'avgTa_cum': '누적평균기온',
+            '누적일조합': '누적일조합', '일조합': '누적일조합', '일조시간': '누적일조합', '누적일조시간': '누적일조합'
         }
         df_weather = df_weather.rename(columns={c: name_map.get(c, c) for c in df_weather.columns})
         if '날짜' not in df_weather.columns:

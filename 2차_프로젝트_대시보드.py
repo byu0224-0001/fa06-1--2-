@@ -167,13 +167,24 @@ def main_dashboard():
     # --- 구매 추천 및 선도거래 ---
     if low_stock_item: # 재고 부족 품목이 있을 때만 구매 추천 표시
         st.subheader(f"🛒 부족한 {low_stock_item} 구매 추천")
-        today_price = load_and_prepare_data(low_stock_item)['가격'].iloc[-1]
-        future_price_14d = generate_future_predictions_for_item(low_stock_item, load_and_prepare_data(low_stock_item), 14)['가격'].iloc[-1]
-        price_diff = int(future_price_14d - today_price)
-        if price_diff > 0:
-            st.success(f"**지금 구매하세요!** AI 예측 결과, 2주 뒤보다 약 **{price_diff:,}원** 저렴합니다!", icon="👍")
-        else:
-            st.warning("**구매 보류.** 2주 내 가격이 안정적이거나 하락할 전망입니다.", icon="🤔")
+        try:
+            history_data = load_and_prepare_data(low_stock_item)
+            if history_data.empty or len(history_data) == 0:
+                st.error(f"{low_stock_item} 데이터를 로드할 수 없습니다.")
+            else:
+                today_price = history_data['가격'].iloc[-1]
+                predictions = generate_future_predictions_for_item(low_stock_item, history_data, 14)
+                if predictions.empty or len(predictions) == 0:
+                    st.error(f"{low_stock_item} 예측 데이터를 생성할 수 없습니다.")
+                else:
+                    future_price_14d = predictions['가격'].iloc[-1]
+                    price_diff = int(future_price_14d - today_price)
+                    if price_diff > 0:
+                        st.success(f"**지금 구매하세요!** AI 예측 결과, 2주 뒤보다 약 **{price_diff:,}원** 저렴합니다!", icon="👍")
+                    else:
+                        st.warning("**구매 보류.** 2주 내 가격이 안정적이거나 하락할 전망입니다.", icon="🤔")
+        except Exception as e:
+            st.error(f"구매 추천 데이터를 처리하는 중 오류가 발생했습니다: {str(e)}")
     
     if st.button("🌾 농산물 바로 구매하러 가기", use_container_width=True):
         st.toast("식자재 구매 서비스 페이지로 이동합니다.(준비중이예요)")
