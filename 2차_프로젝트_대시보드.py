@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from rice_backend import get_rice_history, predict_rice_price
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
@@ -26,29 +27,30 @@ def load_and_prepare_data(item_name):
     if item_name == "건고추": base_price = 25000
     elif item_name == "양파": base_price = 18000
 
+    # 쌀: 백엔드 원시 단위 그대로 사용 (스케일링 없음)
+    if item_name == "쌀":
+        try:
+            return get_rice_history(days=365)
+        except FileNotFoundError:
+            dates = pd.to_datetime(pd.date_range(end=datetime.today(), periods=365))
+            prices = np.full(365, base_price)
+            return pd.DataFrame({'날짜': dates, '가격': prices})
+    
+    # 그 외 품목: CSV 기반 시뮬레이션(프런트 스케일 적용)
     try:
-        # 인코딩 불일치에 대비한 다중 시도
         encodings_to_try = ['utf-8-sig', 'utf-8', 'cp949', 'ISO-8859-1']
         df = None
         last_error = None
-        
         for enc in encodings_to_try:
             try:
                 df = pd.read_csv('rice.csv', encoding=enc, encoding_errors='replace')
-                # 컬럼 확인 후 성공시 break
                 if '날짜' in df.columns and '가격(20kg)' in df.columns:
                     break
-                else:
-                    print(f"인코딩 {enc}로 읽었지만 필요한 컬럼이 없습니다. 컬럼: {list(df.columns)}")
-                    continue
             except Exception as e:
                 last_error = e
-                print(f"인코딩 {enc} 시도 실패: {e}")
                 continue
-        
         if df is None or '날짜' not in df.columns:
-            raise Exception(f"rice.csv 파일을 읽을 수 없습니다. 마지막 오류: {last_error}")
-        
+            raise FileNotFoundError(str(last_error))
         df['날짜'] = pd.to_datetime(df['날짜'])
         price_history = df.groupby('날짜')['가격(20kg)'].mean().reset_index()
         price_history = price_history.sort_values('날짜').tail(365)
@@ -57,17 +59,20 @@ def load_and_prepare_data(item_name):
         return price_history
     except FileNotFoundError:
         dates = pd.to_datetime(pd.date_range(end=datetime.today(), periods=365))
-        prices = np.random.normal(loc=base_price, scale=base_price*0.1, size=365)
+        prices = np.full(365, base_price)
         return pd.DataFrame({'날짜': dates, '가격': prices})
 
-def generate_future_predictions(price_history, days_to_predict):
+def generate_future_predictions_for_item(item_name, price_history, days_to_predict):
+    # 쌀: 백엔드 예측(결정론적) 사용
+    if item_name == "쌀":
+        return predict_rice_price(price_history, days_to_predict)
+    # 그 외 품목: 결정론적 선형 추세 시뮬레이션 (노이즈 제거)
     last_date = price_history['날짜'].max()
-    last_price = price_history['가격'].iloc[-1]
+    last_price = float(price_history['가격'].iloc[-1])
+    trend = np.linspace(1.0, 1.0 + 0.10, days_to_predict)  # 최대 +10%
     future_dates = pd.to_datetime(pd.date_range(start=last_date + timedelta(days=1), periods=days_to_predict))
-    trend_factor = np.linspace(1, 1 + np.random.uniform(-0.15, 0.15), days_to_predict)
-    noise = np.random.normal(0, last_price * 0.02, days_to_predict)
-    future_prices = last_price * trend_factor + noise
-    return pd.DataFrame({'날짜': future_dates, '가격': future_prices.astype(int)})
+    future_prices = (last_price * trend).astype(float)
+    return pd.DataFrame({'날짜': future_dates, '가격': future_prices})
 
 # ==============================================================================
 # 🧭 사이드바 UI: 페이지 네비게이션 메뉴 (DOCX 파일 기반)
@@ -121,7 +126,7 @@ def main_dashboard():
                     st.markdown(f"<h2 style='display: inline;'>{int(current_price):,}원</h2> <span style='color:{price_color};'>{price_arrow} {int(abs(daily_change)):,}</span>", unsafe_allow_html=True)
                     st.markdown(f"<p style='margin-top:0.5rem;'>어제보다 {int(abs(daily_change)):,}원 {change_text}</p>", unsafe_allow_html=True)
                 else:
-                    prediction = generate_future_predictions(history, st.session_state.predict_days)
+                    prediction = generate_future_predictions_for_item(item_name, history, st.session_state.predict_days)
                     predicted_price = prediction['가격'].iloc[-1]
                     future_change = predicted_price - current_price
                     price_color = "#E84A5F" if future_change > 0 else "#3182F6"
@@ -159,7 +164,7 @@ def main_dashboard():
     if low_stock_item: # 재고 부족 품목이 있을 때만 구매 추천 표시
         st.subheader(f"🛒 부족한 {low_stock_item} 구매 추천")
         today_price = load_and_prepare_data(low_stock_item)['가격'].iloc[-1]
-        future_price_14d = generate_future_predictions(load_and_prepare_data(low_stock_item), 14)['가격'].iloc[-1]
+        future_price_14d = generate_future_predictions_for_item(low_stock_item, load_and_prepare_data(low_stock_item), 14)['가격'].iloc[-1]
         price_diff = int(future_price_14d - today_price)
         if price_diff > 0:
             st.success(f"**지금 구매하세요!** AI 예측 결과, 2주 뒤보다 약 **{price_diff:,}원** 저렴합니다!", icon="👍")
@@ -244,8 +249,13 @@ def detail_page():
     )
     st.session_state.predict_days = predict_days
 
-    price_history = load_and_prepare_data(item_name)
-    predictions = generate_future_predictions(price_history, predict_days)
+    # 백엔드 연동: 쌀은 실제 백엔드 데이터/예측 사용, 그 외 품목은 기존 시뮬레이션 유지
+    if item_name == "쌀":
+        price_history = get_rice_history(days=365)
+        predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
+    else:
+        price_history = load_and_prepare_data(item_name)
+        predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=price_history['날짜'].tail(60), y=price_history['가격'].tail(60), mode='lines', name='과거 데이터', line=dict(color='darkgrey', width=2)))
@@ -255,7 +265,14 @@ def detail_page():
     fig.update_layout(title=dict(text=f'{item_name} ({unit}) 가격 추이 및 예측', x=0.5), yaxis_title=f'가격 (원/{unit})', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), height=500)
     st.plotly_chart(fig, use_container_width=True)
 
-    pass # Placeholder to keep the structure clear
+    # 간단한 요약 지표
+    current_price = int(price_history['가격'].iloc[-1])
+    future_price = int(predictions['가격'].iloc[-1])
+    diff = future_price - current_price
+    cols = st.columns(3)
+    cols[0].metric(label="현재 가격", value=f"{current_price:,} 원")
+    cols[1].metric(label=f"{period_options[predict_days]} 후 예측", value=f"{future_price:,} 원")
+    cols[2].metric(label="변화", value=("+" if diff>=0 else "")+f"{diff:,} 원", delta=f"{diff:,} 원")
 
 # ==============================================================================
 # 🧭 페이지 라우팅 (Page Routing)
