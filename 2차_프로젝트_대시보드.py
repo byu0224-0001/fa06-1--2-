@@ -122,9 +122,6 @@ def main_dashboard():
             if history.empty or len(history) == 0:
                 st.error(f"{item_name} 데이터를 로드할 수 없습니다.")
                 continue
-            # 디버깅 정보 추가
-            if item_name == "쌀":
-                st.write(f"🔍 {item_name} 데이터: {history.shape}, 최근 가격: {history['가격'].iloc[-1]:.0f}")
             current_price = history['가격'].iloc[-1]
             with st.container(border=True):
                 st.markdown(f"<h5>{emoji} {item_name} ({price_units[item_name]})</h5>", unsafe_allow_html=True)
@@ -274,11 +271,7 @@ def detail_page():
     # 백엔드 연동: 쌀은 실제 백엔드 데이터/예측 사용, 그 외 품목은 기존 시뮬레이션 유지
     if item_name == "쌀":
         price_history = get_rice_history(days=365)
-        st.write(f"🔍 디버깅: 쌀 데이터 shape = {price_history.shape}")
-        st.write(f"🔍 디버깅: 최근 3일 쌀 가격 = {price_history.tail(3)['가격'].tolist()}")
         predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
-        st.write(f"🔍 디버깅: 예측 데이터 shape = {predictions.shape}")
-        st.write(f"🔍 디버깅: 예측 가격 = {predictions['가격'].tolist()}")
     else:
         price_history = load_and_prepare_data(item_name)
         predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)

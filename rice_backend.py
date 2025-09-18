@@ -73,25 +73,16 @@ def _load_all_data() -> pd.DataFrame:
         df_weather = pd.DataFrame({'날짜': [pd.Timestamp.today()], '누적평균기온': [15.0], '누적일조합': [6.0]})
 
     try:
-        # 4) 쌀 데이터 (감자 도매 데이터 사용)
-        df_rice = pd.read_excel('감자_도매_데이터.xlsx')
+        # 4) 쌀 데이터 (실제 쌀 CSV 데이터 사용)
+        df_rice = pd.read_csv('rice.csv')
         df_rice.columns = [str(c).strip() for c in df_rice.columns]
-        name_map_rice = {
-            '일자': '날짜', 'date': '날짜', '날짜': '날짜',
-            '가격': '가격', '평균가격': '가격', '도매가격': '가격', '소매가격': '가격'
-        }
-        df_rice = df_rice.rename(columns={c: name_map_rice.get(c, c) for c in df_rice.columns})
+        # 쌀 데이터는 이미 올바른 컬럼명을 가지고 있음
+        if '가격(20kg)' in df_rice.columns:
+            df_rice.rename(columns={'가격(20kg)': '가격'}, inplace=True)
+        # 불필요한 컬럼 제거
         for col in ['품목명','품종명','시장명','지역명']:
             if col in df_rice.columns:
                 df_rice.drop(columns=[col], inplace=True)
-        if '날짜' not in df_rice.columns:
-            df_rice.rename(columns={df_rice.columns[0]: '날짜'}, inplace=True)
-        if '가격' not in df_rice.columns:
-            num_cols = df_rice.select_dtypes(include='number').columns.tolist()
-            if num_cols:
-                df_rice.rename(columns={num_cols[0]: '가격'}, inplace=True)
-            else:
-                df_rice['가격'] = np.nan
         df_rice['날짜'] = pd.to_datetime(df_rice['날짜'], errors='coerce')
         df_rice['가격'] = pd.to_numeric(df_rice['가격'], errors='coerce')
         df_rice = df_rice.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
