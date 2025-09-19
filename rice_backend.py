@@ -633,28 +633,50 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             # 개선된 변수별 예측 방법
             next_row = {}
             
-            # 1) 환율 예측 (ARIMA 스타일 + 계절성)
+            # 1) 환율 예측 (더 안정적인 방법)
             if '환율' in df_work.columns:
                 last_val = df_work['환율'].iloc[-1]
-                # 최근 30일 트렌드 + 계절성 + 랜덤 변동
-                recent_vals = df_work['환율'].tail(30)
-                trend = (recent_vals.iloc[-1] - recent_vals.iloc[0]) / len(recent_vals)
-                seasonal_factor = 1 + 0.1 * np.sin(2 * np.pi * next_date.dayofyear / 365.25)
-                noise = np.random.normal(0, 0.005)  # 0.5% 표준편차
-                next_row['환율'] = last_val + trend + noise * last_val
+                
+                # 최근 90일 데이터로 더 안정적인 트렌드 계산
+                recent_vals = df_work['환율'].tail(90)
+                if len(recent_vals) >= 30:
+                    # 30일 이동평균으로 트렌드 계산
+                    ma_30 = recent_vals.tail(30).mean()
+                    ma_60 = recent_vals.tail(60).mean() if len(recent_vals) >= 60 else ma_30
+                    trend = (ma_30 - ma_60) / ma_60 * 0.1  # 매우 완만한 트렌드
+                else:
+                    trend = 0
+                
+                # 계절성 (연말/연초 효과)
+                day_of_year = next_date.dayofyear
+                seasonal_factor = 1 + 0.02 * np.sin(2 * np.pi * (day_of_year - 15) / 365.25)
+                
+                # 매우 작은 랜덤 변동 (0.1%)
+                noise = np.random.normal(0, 0.001)
+                
+                next_row['환율'] = last_val * seasonal_factor * (1 + trend + noise)
             
-            # 2) 유가 예측 (더 복잡한 패턴)
+            # 2) 유가 예측 (더 안정적인 방법)
             if '유가' in df_work.columns:
                 last_val = df_work['유가'].iloc[-1]
-                # 주기적 패턴 + 트렌드
-                recent_vals = df_work['유가'].tail(14)
-                ma_7 = recent_vals.tail(7).mean()
-                ma_14 = recent_vals.mean()
-                trend = (ma_7 - ma_14) / ma_14
-                # 주간 패턴 (월요일 효과 등)
-                weekday_factor = 1 + 0.02 * (next_date.weekday() - 2) / 5
-                noise = np.random.normal(0, 0.01)
-                next_row['유가'] = last_val * (1 + trend * 0.3) * weekday_factor * (1 + noise)
+                
+                # 최근 60일 데이터로 안정적인 트렌드 계산
+                recent_vals = df_work['유가'].tail(60)
+                if len(recent_vals) >= 20:
+                    ma_20 = recent_vals.tail(20).mean()
+                    ma_40 = recent_vals.tail(40).mean() if len(recent_vals) >= 40 else ma_20
+                    trend = (ma_20 - ma_40) / ma_40 * 0.05  # 매우 완만한 트렌드
+                else:
+                    trend = 0
+                
+                # 계절성 (겨울철 유가 상승)
+                day_of_year = next_date.dayofyear
+                seasonal_factor = 1 + 0.03 * np.sin(2 * np.pi * (day_of_year - 80) / 365.25)
+                
+                # 작은 랜덤 변동 (0.2%)
+                noise = np.random.normal(0, 0.002)
+                
+                next_row['유가'] = last_val * seasonal_factor * (1 + trend + noise)
             
             # 3) 날씨 예측 (계절성 중심)
             if '누적평균기온' in df_work.columns:
@@ -776,19 +798,48 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             # 방법 1: XGBoost + DLinear 예측
             ensemble_preds.append(y_hat)
             
-            # 방법 2: 트렌드 기반 예측
-            if len(df_work) >= 7:
-                recent_prices = df_work['가격'].tail(7)
-                trend = (recent_prices.iloc[-1] - recent_prices.iloc[0]) / len(recent_prices)
-                trend_pred = df_work['가격'].iloc[-1] + trend
+            # 방법 2: 고급 트렌드 기반 예측
+            if len(df_work) >= 30:
+                # 다중 기간 트렌드 분석
+                recent_7 = df_work['가격'].tail(7)
+                recent_14 = df_work['가격'].tail(14)
+                recent_30 = df_work['가격'].tail(30)
+                
+                # 가중 평균 트렌드 (최근일수록 높은 가중치)
+                trend_7 = (recent_7.iloc[-1] - recent_7.iloc[0]) / len(recent_7)
+                trend_14 = (recent_14.iloc[-1] - recent_14.iloc[0]) / len(recent_14)
+                trend_30 = (recent_30.iloc[-1] - recent_30.iloc[0]) / len(recent_30)
+                
+                # 가중 평균 (7일: 50%, 14일: 30%, 30일: 20%)
+                weighted_trend = trend_7 * 0.5 + trend_14 * 0.3 + trend_30 * 0.2
+                trend_pred = df_work['가격'].iloc[-1] + weighted_trend
                 ensemble_preds.append(trend_pred)
             
-            # 방법 3: 계절성 기반 예측
+            # 방법 3: 고급 계절성 기반 예측
             if len(df_work) >= 365:
-                # 같은 요일의 과거 평균
+                # 1) 같은 요일의 과거 평균
                 same_weekday_prices = df_work[df_work['날짜'].dt.weekday == next_date.weekday()]['가격'].tail(10)
+                
+                # 2) 같은 월의 과거 평균
+                same_month_prices = df_work[df_work['날짜'].dt.month == next_date.month]['가격'].tail(5)
+                
+                # 3) 같은 계절의 과거 평균
+                season = (next_date.month % 12 + 3) // 3  # 1:봄, 2:여름, 3:가을, 4:겨울
+                same_season_prices = df_work[((df_work['날짜'].dt.month % 12 + 3) // 3) == season]['가격'].tail(8)
+                
+                seasonal_preds = []
                 if len(same_weekday_prices) > 0:
-                    seasonal_pred = same_weekday_prices.mean()
+                    seasonal_preds.append(same_weekday_prices.mean())
+                if len(same_month_prices) > 0:
+                    seasonal_preds.append(same_month_prices.mean())
+                if len(same_season_prices) > 0:
+                    seasonal_preds.append(same_season_prices.mean())
+                
+                if len(seasonal_preds) > 0:
+                    # 가중 평균 (요일: 40%, 월: 40%, 계절: 20%)
+                    weights = [0.4, 0.4, 0.2][:len(seasonal_preds)]
+                    weights = [w/sum(weights) for w in weights]  # 정규화
+                    seasonal_pred = sum(pred * weight for pred, weight in zip(seasonal_preds, weights))
                     ensemble_preds.append(seasonal_pred)
             
             # 방법 4: 변수 기반 선형 예측
@@ -814,9 +865,39 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             else:
                 final_pred = y_hat
             
-            # 6) 예측값 안정화 (극단값 제한)
+            # 6) 쌀 가격 특화 예측 보정
             last_price = df_work['가격'].iloc[-1]
-            max_change = 0.05  # 최대 5% 변화
+            
+            # 쌀 가격의 특성 반영
+            # 1) 계절성 (수확기/비수확기)
+            day_of_year = next_date.dayofyear
+            if 240 <= day_of_year <= 300:  # 8월-10월 (수확기)
+                seasonal_factor = 0.98  # 수확기에는 가격 하락
+            elif 60 <= day_of_year <= 120:  # 3월-4월 (비수확기)
+                seasonal_factor = 1.02  # 비수확기에는 가격 상승
+            else:
+                seasonal_factor = 1.0
+            
+            # 2) 정부 개입 시뮬레이션 (가격 급등 시 개입)
+            if final_pred > last_price * 1.03:  # 3% 이상 상승 시
+                intervention_factor = 0.995  # 정부 개입으로 가격 억제
+            elif final_pred < last_price * 0.97:  # 3% 이상 하락 시
+                intervention_factor = 1.005  # 정부 지원으로 가격 상승
+            else:
+                intervention_factor = 1.0
+            
+            # 3) 수급 불균형 시뮬레이션
+            recent_volatility = df_work['가격'].tail(7).std() / df_work['가격'].tail(7).mean()
+            if recent_volatility > 0.02:  # 변동성이 높을 때
+                stability_factor = 0.998  # 안정화 압력
+            else:
+                stability_factor = 1.0
+            
+            # 4) 최종 예측값 계산
+            final_pred = final_pred * seasonal_factor * intervention_factor * stability_factor
+            
+            # 5) 예측값 안정화 (극단값 제한)
+            max_change = 0.02  # 최대 2% 변화 (더 안정적)
             final_pred = max(last_price * (1 - max_change), 
                            min(last_price * (1 + max_change), final_pred))
             
