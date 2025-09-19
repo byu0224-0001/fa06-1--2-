@@ -460,6 +460,13 @@ if 'predict_days' not in st.session_state: st.session_state.predict_days = 0
 # 🛒 식자재 바로 구매 페이지 함수
 # ==============================================================================
 def purchase_page():
+    # 뒤로가기 버튼
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("← 뒤로가기", key="back_purchase"):
+            st.session_state.page = 'main'
+            st.rerun()
+    
     st.title("🛒 식자재 바로 구매하기")
     st.markdown("필요한 식자재를 즉시 구매하세요.")
     st.divider()
@@ -491,6 +498,13 @@ def purchase_page():
 # 📅 식자재 예약 구매 페이지 함수
 # ==============================================================================
 def reservation_page():
+    # 뒤로가기 버튼
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("← 뒤로가기", key="back_reservation"):
+            st.session_state.page = 'main'
+            st.rerun()
+    
     st.title("📅 식자재 예약 구매하기")
     st.markdown("핵심 수익 모델: 미래 가격 예측을 통한 예약 구매로 비용 절약")
     st.divider()
