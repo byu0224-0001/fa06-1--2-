@@ -359,7 +359,7 @@ def train_model(history: pd.DataFrame) -> None:
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
     
-    # 스케일링
+    # 스케일링 (43개 피처로)
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -442,6 +442,12 @@ def train_model(history: pd.DataFrame) -> None:
         else:
             X_test_final = X_test_scaled
         
+        # 44개 피처로 새로운 스케일러 생성
+        print("44개 피처로 새로운 스케일러 생성 중...")
+        final_scaler = StandardScaler()
+        X_train_final_scaled = final_scaler.fit_transform(X_train_final)
+        X_test_final_scaled = final_scaler.transform(X_test_final)
+        
         y_train_final = y_train.iloc[sequence_length-1:]
         y_test_final = y_test.iloc[sequence_length-1:] if len(X_test_seq) > 0 else y_test
         
@@ -459,17 +465,17 @@ def train_model(history: pd.DataFrame) -> None:
         )
         
         xgb_model.fit(
-            X_train_final, y_train_final,
-            eval_set=[(X_test_final, y_test_final)],
+            X_train_final_scaled, y_train_final,
+            eval_set=[(X_test_final_scaled, y_test_final)],
             verbose=False
         )
         
-        # 모델 저장
+        # 모델 저장 (44개 피처용 스케일러 저장)
         xgb_model.save_model(MODEL_PATH)
-        joblib.dump(scaler, SCALER_PATH)
+        joblib.dump(final_scaler, SCALER_PATH)  # 44개 피처용 스케일러
         joblib.dump(feature_cols, FEATURE_COLS_PATH)
         
-        print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final))):.2f}")
+        print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final_scaled))):.2f}")
 
 def _load_model():
     if xgb is None:
