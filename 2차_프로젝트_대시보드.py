@@ -137,6 +137,9 @@ with st.sidebar:
 # 🎈 메인 대시보드 페이지 함수
 # ==============================================================================
 def main_dashboard():
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     st.title("🧑‍🍳 사장님을 위한 AI 식자재 비서")
     st.markdown(f"**기준일:** `2025-09-12` | **가게명:** `삼정캐대박맛집`")
     st.divider()
@@ -230,6 +233,9 @@ def main_dashboard():
 # 📊 원가 분석 페이지 함수
 # ==============================================================================
 def cost_analysis_page():
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     st.title("📊 원가 분석")
     st.markdown("가게의 현재 실적을 확인하고, 다양한 시나리오를 시뮬레이션 해보세요.")
     st.divider()
@@ -264,6 +270,9 @@ def cost_analysis_page():
 # 💡 서비스 소개 페이지 함수
 # ==============================================================================
 def about_service_page():
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     st.title("💡 서비스 소개")
     st.markdown("저희 서비스는 데이터와 AI 기술을 통해 사장님의 성공을 돕습니다.")
     st.divider()
@@ -280,6 +289,9 @@ def about_service_page():
 # 📈 상세 예측 페이지 함수
 # ==============================================================================
 def detail_page():
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     item_name = st.session_state.selected_item
     emoji_map = {"쌀": "🍚", "대파": "🧄", "양파": "🧅"}
     unit_map = {"쌀": "20kg", "대파": "20kg", "양파": "15kg"}
@@ -460,10 +472,13 @@ if 'predict_days' not in st.session_state: st.session_state.predict_days = 0
 # 🛒 식자재 바로 구매 페이지 함수
 # ==============================================================================
 def purchase_page():
-    # 뒤로가기 버튼
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 뒤로가기 버튼 (아이콘만)
     col1, col2 = st.columns([1, 10])
     with col1:
-        if st.button("← 뒤로가기", key="back_purchase"):
+        if st.button("←", key="back_purchase", help="메인으로 돌아가기"):
             st.session_state.page = 'main'
             st.rerun()
     
@@ -498,10 +513,13 @@ def purchase_page():
 # 📅 식자재 예약 구매 페이지 함수
 # ==============================================================================
 def reservation_page():
-    # 뒤로가기 버튼
+    # 상단 여백 추가
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 뒤로가기 버튼 (아이콘만)
     col1, col2 = st.columns([1, 10])
     with col1:
-        if st.button("← 뒤로가기", key="back_reservation"):
+        if st.button("←", key="back_reservation", help="메인으로 돌아가기"):
             st.session_state.page = 'main'
             st.rerun()
     
