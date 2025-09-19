@@ -16,6 +16,39 @@ st.set_page_config(
 )
 
 # ==============================================================================
+# AI 구매 팁 함수
+# ==============================================================================
+def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
+    """AI 구매 팁을 추가하는 함수"""
+    try:
+        current_price = history['가격'].iloc[-1]
+        
+        # 최저가 찾기
+        min_price = prediction['가격'].min()
+        min_price_date = prediction[prediction['가격'] == min_price]['날짜'].iloc[0]
+        min_price_date_str = min_price_date.strftime('%m월 %d일')
+        
+        # 가격 변화 분석
+        price_trend = "하락" if prediction['가격'].iloc[-1] < prediction['가격'].iloc[0] else "상승"
+        
+        # 구매 권장 시점 결정
+        if min_price < current_price * 0.95:  # 5% 이상 저렴한 시점이 있으면
+            recommendation = f"{min_price_date_str}에 {int(min_price):,}원으로 가장 저렴할 것으로 예측됩니다."
+            tip = f"{min_price_date_str}에 구매하여 비용을 절감할 것을 권장합니다."
+        else:
+            recommendation = f"분석 기간 동안 {item_name} 가격이 {price_trend}하는 추세를 보입니다."
+            tip = "현재 가격이 적정 수준이므로 필요시 구매하시면 됩니다."
+        
+        # AI 구매 팁 표시
+        with st.expander("🤖 AI 구매 팁", expanded=False):
+            st.markdown(f"**결론:** {recommendation}")
+            st.markdown(f"**분석:** 분석 기간 동안 {item_name} 가격이 {price_trend}하며, {min_price_date_str}에 가장 낮은 가격을 기록할 것으로 예상됩니다.")
+            st.markdown(f"**팁:** {tip}")
+            
+    except Exception as e:
+        st.error(f"AI 구매 팁 생성 중 오류가 발생했습니다: {e}")
+
+# ==============================================================================
 # 데이터 시뮬레이션 함수 (백엔드 API 및 DB 연동으로 대체될 부분)
 # ==============================================================================
 @st.cache_data
@@ -119,6 +152,9 @@ def main_dashboard():
                     change_text = "오를 전망" if future_change > 0 else "내릴 전망"
                     st.markdown(f"<h2 style='display: inline;'>{int(predicted_price):,}원</h2> <span style='color:{price_color};'>{price_arrow} {int(abs(future_change)):,}</span>", unsafe_allow_html=True)
                     st.markdown(f"<p style='margin-top:0.5rem;'>현재보다 {int(abs(future_change)):,}원 {change_text}이에요.</p>", unsafe_allow_html=True)
+                    
+                    # AI 구매 팁 추가
+                    _add_ai_purchase_tip(item_name, history, prediction, st.session_state.predict_days)
                 if st.button(f"상세 예측 보기", key=f"details_{item_name}", width='stretch'):
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
