@@ -13,7 +13,7 @@ st.set_page_config(
     page_title="사장님을 위한 AI 식자재 비서",
     page_icon="🧑‍🍳",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # ==============================================================================
