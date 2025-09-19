@@ -115,7 +115,7 @@ def _load_all_data() -> pd.DataFrame:
     
     try:
         # 1) 환율 데이터 (원본 노트북과 동일한 방식)
-        df_exchange = pd.read_csv('exchange_rate.csv')
+        df_exchange = pd.read_csv('data/exchange_rate.csv')
         df_exchange.columns = ['날짜', '환율']
         df_exchange['날짜'] = pd.to_datetime(df_exchange['날짜'], format='%Y-%m-%d')
         df_exchange['환율'] = pd.to_numeric(df_exchange['환율'].astype(str).str.replace(',', ''), errors='coerce')
@@ -126,7 +126,7 @@ def _load_all_data() -> pd.DataFrame:
 
     try:
         # 2) 유가 데이터 (원본 노트북과 동일한 방식)
-        df_oil = pd.read_csv('oil.csv', encoding='cp949')
+        df_oil = pd.read_csv('data/oil.csv', encoding='cp949')
         df_oil.columns = ['날짜', '유가']
         df_oil['날짜'] = pd.to_datetime(df_oil['날짜'], format='%Y-%m-%d')
         df_oil = df_oil.groupby('날짜').mean().reset_index()
@@ -136,7 +136,7 @@ def _load_all_data() -> pd.DataFrame:
 
     try:
         # 3) 날씨 데이터 (원본 노트북과 동일한 방식)
-        df_weather = pd.read_csv('top_weather_features.csv', encoding='cp949')
+        df_weather = pd.read_csv('data/top_weather_features.csv', encoding='utf-8')
         # 누적강수량 컬럼 제거
         if '누적강수량' in df_weather.columns:
             df_weather.drop('누적강수량', axis=1, inplace=True)
@@ -150,7 +150,7 @@ def _load_all_data() -> pd.DataFrame:
 
     try:
         # 4) 쌀 데이터 (원본 노트북과 동일한 방식)
-        df_rice = pd.read_csv('rice.csv')
+        df_rice = pd.read_csv('data/rice.csv')
         # 불필요한 컬럼 제거
         df_rice.drop(['품목명','품종명','시장명','지역명'], axis=1, inplace=True)
         # 컬럼명 설정
