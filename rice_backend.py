@@ -810,8 +810,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 trend_14 = (recent_14.iloc[-1] - recent_14.iloc[0]) / recent_14.iloc[0] / len(recent_14)
                 trend_30 = (recent_30.iloc[-1] - recent_30.iloc[0]) / recent_30.iloc[0] / len(recent_30)
                 
-                # 가중 평균 (7일: 30%, 14일: 40%, 30일: 30%) - 더 균형잡힌 가중치
-                weighted_trend_rate = trend_7 * 0.3 + trend_14 * 0.4 + trend_30 * 0.3
+                # 가중 평균 (7일: 20%, 14일: 30%, 30일: 50%) - 장기 트렌드 중시
+                weighted_trend_rate = trend_7 * 0.2 + trend_14 * 0.3 + trend_30 * 0.5
+                # 트렌드 영향도 제한 (최대 1% 변화)
+                weighted_trend_rate = max(-0.01, min(0.01, weighted_trend_rate))
                 trend_pred = df_work['가격'].iloc[-1] * (1 + weighted_trend_rate)
                 ensemble_preds.append(trend_pred)
             
@@ -860,8 +862,8 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             
             # 앙상블 가중 평균 (XGBoost에 더 높은 가중치)
             if len(ensemble_preds) >= 2:
-                # XGBoost: 70%, 나머지: 30% (더 안정적)
-                weights = [0.7] + [0.3 / (len(ensemble_preds) - 1)] * (len(ensemble_preds) - 1)
+                # XGBoost: 80%, 나머지: 20% (더 안정적)
+                weights = [0.8] + [0.2 / (len(ensemble_preds) - 1)] * (len(ensemble_preds) - 1)
                 final_pred = sum(pred * weight for pred, weight in zip(ensemble_preds, weights))
             else:
                 final_pred = y_hat
@@ -897,7 +899,18 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             # 4) 최종 예측값 계산
             final_pred = final_pred * seasonal_factor * intervention_factor * stability_factor
             
-            # 5) 예측값 안정화 (극단값 제한)
+            # 5) 연속성 보장 (실제 데이터와 예측 데이터 간의 부드러운 연결)
+            if day_idx == 0:  # 첫 번째 예측일 때만
+                last_actual_price = df_work['가격'].iloc[-1]
+                # 실제 가격과 예측 가격의 차이가 2% 이상이면 조정
+                price_diff_ratio = abs(final_pred - last_actual_price) / last_actual_price
+                if price_diff_ratio > 0.02:  # 2% 이상 차이
+                    # 실제 가격에서 0.5% 변화로 시작
+                    change_direction = 1 if final_pred > last_actual_price else -1
+                    final_pred = last_actual_price * (1 + change_direction * 0.005)
+                    print(f"연속성 조정: {last_actual_price:.0f}원 → {final_pred:.0f}원 (차이: {price_diff_ratio*100:.1f}%)")
+            
+            # 6) 예측값 안정화 (극단값 제한)
             # 최근 7일 평균 변화율을 고려한 동적 제한
             if len(df_work) >= 7:
                 recent_changes = []
@@ -905,14 +918,23 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                     change = (df_work['가격'].iloc[-i] - df_work['가격'].iloc[-i-1]) / df_work['가격'].iloc[-i-1]
                     recent_changes.append(abs(change))
                 avg_volatility = np.mean(recent_changes) if recent_changes else 0.01
-                # 평균 변동성의 2배를 최대 변화율로 설정 (더 관대하게)
-                max_change = min(0.03, avg_volatility * 2)  # 최대 3%
+                # 평균 변동성의 1.5배를 최대 변화율로 설정 (더 보수적)
+                max_change = min(0.02, avg_volatility * 1.5)  # 최대 2%
             else:
-                max_change = 0.02  # 최대 2% 변화
+                max_change = 0.015  # 최대 1.5% 변화
             
             # 강력한 클리핑
             final_pred = max(last_price * (1 - max_change), 
                            min(last_price * (1 + max_change), final_pred))
+            
+            # 7) 연속적 안정화 (이전 예측과의 연속성 보장)
+            if len(preds) > 0:
+                prev_pred = preds[-1]['가격']
+                # 이전 예측과 1% 이상 차이나면 조정
+                if abs(final_pred - prev_pred) / prev_pred > 0.01:
+                    change_direction = 1 if final_pred > prev_pred else -1
+                    final_pred = prev_pred * (1 + change_direction * 0.01)
+                    print(f"연속성 조정: {prev_pred:.0f}원 → {final_pred:.0f}원")
             
             
             preds.append({'날짜': next_date, '가격': final_pred})
