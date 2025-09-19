@@ -419,15 +419,26 @@ def train_model(history: pd.DataFrame) -> None:
                     print(f"조기 종료: {epoch} 에포크")
                     break
         
-        # DLinear 예측 제거 - 43개 피처로 일관성 유지
-        # 기존 모델이 43개 피처로 학습되었으므로 43개로 통일
+        # DLinear 예측 생성 (원본 노트북과 동일)
+        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+        dlinear_model.eval()
         
-        # XGBoost 학습 (DLinear 예측 제외)
+        print("DLinear 예측 생성 중...")
+        dlinear_preds_train = generate_dlinear_predictions(
+            pd.DataFrame(X_train_scaled), sequence_length, batch_size, dlinear_model
+        )
+        
+        # XGBoost 학습 (DLinear 예측 포함)
         X_train_final = X_train_scaled[sequence_length-1:]
+        X_train_final = np.column_stack([X_train_final, dlinear_preds_train])
         
         X_test_seq = create_sequences(X_test_scaled, sequence_length)
         if len(X_test_seq) > 0:
+            dlinear_preds_test = generate_dlinear_predictions(
+                pd.DataFrame(X_test_scaled), sequence_length, batch_size, dlinear_model
+            )
             X_test_final = X_test_scaled[sequence_length-1:]
+            X_test_final = np.column_stack([X_test_final, dlinear_preds_test])
         else:
             X_test_final = X_test_scaled
         
@@ -528,7 +539,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             tmp = _add_lag_rolling(tmp)
             tmp = _add_advanced_features(tmp)
             
-            # 학습 시와 동일한 방식으로 피처 생성 (DLinear 예측 포함)
+            # 학습 시와 동일한 방식으로 피처 생성
             tmp_supervised, _ = _build_supervised(tmp)
             if len(tmp_supervised) == 0:
                 # 데이터가 부족한 경우 기본값으로 채우기
@@ -537,32 +548,57 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 # 마지막 행의 피처만 선택
                 x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
-            # 피처 개수 검증 및 조정
-            model_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else len(feature_cols)
+            # DLinear 예측 추가 (학습 시와 동일하게)
+            try:
+                # DLinear 모델 로드
+                dlinear_model = DLinear(30, 1, len(feature_cols)).to(_get_device())
+                if os.path.exists(DLINEAR_PATH):
+                    dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+                    dlinear_model.eval()
+                    
+                    # 시퀀스 생성
+                    sequence_length = 30
+                    if len(tmp_supervised) >= sequence_length:
+                        # 마지막 30개 행으로 시퀀스 생성
+                        seq_data = tmp_supervised[feature_cols].iloc[-sequence_length:].values
+                        seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
+                        
+                        with torch.no_grad():
+                            dlinear_pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
+                    else:
+                        dlinear_pred = 0.0
+                else:
+                    dlinear_pred = 0.0
+            except Exception as e:
+                print(f"DLinear 예측 생성 실패: {e}")
+                dlinear_pred = 0.0
+            
+            # DLinear 예측을 피처에 추가
+            x_next_array = x_next.values
+            x_next_with_dlinear = np.column_stack([x_next_array, [dlinear_pred]])
+            
+            # 피처 개수 검증
+            model_features = model.n_features_in_ if hasattr(model, 'n_features_in_') else len(feature_cols) + 1
             expected_features = model_features
-            actual_features = x_next.shape[1]
+            actual_features = x_next_with_dlinear.shape[1]
             if actual_features != expected_features:
                 print(f"피처 개수 불일치: 예상 {expected_features}, 실제 {actual_features}")
                 # 부족한 피처를 0으로 채우기
                 if actual_features < expected_features:
                     missing_count = expected_features - actual_features
-                    for i in range(missing_count):
-                        x_next[f'missing_feature_{i}'] = [0.0]
+                    padding = np.zeros((1, missing_count))
+                    x_next_with_dlinear = np.column_stack([x_next_with_dlinear, padding])
                 # 초과한 피처 제거
                 elif actual_features > expected_features:
-                    x_next = x_next.iloc[:, :expected_features]
-                
-                # 피처 순서 정렬 (feature_cols 순서대로)
-                x_next = x_next.reindex(columns=feature_cols, fill_value=0.0)
+                    x_next_with_dlinear = x_next_with_dlinear[:, :expected_features]
             
             
             if scaler is not None:
-                # 피처 이름 문제를 피하기 위해 numpy 배열로 변환
-                x_next_array = x_next.values
-                x_next_scaled = scaler.transform(x_next_array)
+                # DLinear 예측이 포함된 데이터로 스케일링
+                x_next_scaled = scaler.transform(x_next_with_dlinear)
                 y_hat = float(model.predict(x_next_scaled)[0])
             else:
-                y_hat = float(model.predict(x_next)[0])
+                y_hat = float(model.predict(x_next_with_dlinear)[0])
             preds.append({'날짜': next_date, '가격': y_hat})
             # 예측된 가격으로 업데이트
             next_row['가격'] = y_hat
