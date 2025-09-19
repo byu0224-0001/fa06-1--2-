@@ -208,51 +208,23 @@ def main_dashboard():
                     st.rerun()
     st.divider()
 
-    # --- [개선] 재고 관리 섹션 확장 및 시각화 ---
-    st.subheader("📦 주요 품목 재고 현황")
-    inventory_data = {
-        "쌀": {"icon": "🍚", "current": 2, "total": 10, "unit": "포대"},
-        "대파": {"icon": "🧄", "current": 8, "total": 20, "unit": "단"},
-        "양파": {"icon": "🧅", "current": 12, "total": 15, "unit": "망"}
-    }
-    inventory_cols = st.columns(3)
-    low_stock_item = None
-    for item_name, data in inventory_data.items():
-        with inventory_cols.pop(0):
-            percentage = (data['current'] / data['total']) * 100
-            st.markdown(f"**{data['icon']} {item_name} 재고**")
-            st.progress(int(percentage), text=f"{data['current']} / {data['total']} {data['unit']}")
-            if percentage < 25: # 재고 25% 미만 시 경고 및 구매 추천 대상 선정
-                st.warning(f"재고가 부족해요! ({int(percentage)}%)", icon="⚠️")
-                if not low_stock_item: low_stock_item = item_name
+    # --- 식자재 구매 섹션 ---
+    st.subheader("🛒 식자재 구매")
     
-    st.info("재고 현황은 수기 입력을 통해서도 업데이트할 수 있습니다.")
-    st.divider()
+    # 구매 옵션 버튼들
+    purchase_cols = st.columns(2)
     
-    # --- 구매 추천 및 선도거래 ---
-    if low_stock_item: # 재고 부족 품목이 있을 때만 구매 추천 표시
-        st.subheader(f"🛒 부족한 {low_stock_item} 구매 추천")
-        try:
-            history_data = load_and_prepare_data(low_stock_item)
-            if history_data.empty or len(history_data) == 0:
-                st.error(f"{low_stock_item} 데이터를 로드할 수 없습니다.")
-            else:
-                today_price = history_data['가격'].iloc[-1]
-                predictions = generate_future_predictions_for_item(low_stock_item, history_data, 14)
-                if predictions.empty or len(predictions) == 0:
-                    st.error(f"{low_stock_item} 예측 데이터를 생성할 수 없습니다.")
-                else:
-                    future_price_14d = predictions['가격'].iloc[-1]
-                    price_diff = int(future_price_14d - today_price)
-                    if price_diff > 0:
-                        st.success(f"**지금 구매하세요!** AI 예측 결과, 2주 뒤보다 약 **{price_diff:,}원** 저렴합니다!", icon="👍")
-                    else:
-                        st.warning("**구매 보류.** 2주 내 가격이 안정적이거나 하락할 전망입니다.", icon="🤔")
-        except Exception as e:
-            st.error(f"구매 추천 데이터를 처리하는 중 오류가 발생했습니다: {str(e)}")
+    with purchase_cols[0]:
+        if st.button("🛒 식자재 바로 구매하기", width='stretch', use_container_width=True):
+            st.session_state.page = 'purchase'
+            st.rerun()
     
-    if st.button("🌾 농산물 바로 구매하러 가기", width='stretch'):
-        st.toast("식자재 구매 서비스 페이지로 이동합니다.(준비중이예요)")
+    with purchase_cols[1]:
+        if st.button("📅 식자재 예약 구매하기", width='stretch', use_container_width=True):
+            st.session_state.page = 'reservation'
+            st.rerun()
+    
+    st.info("💡 AI 구매 팁을 참고하여 최적의 구매 시점을 선택하세요!")
 
 # ==============================================================================
 # 📊 원가 분석 페이지 함수
@@ -484,6 +456,95 @@ def detail_page():
 if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'predict_days' not in st.session_state: st.session_state.predict_days = 0
 
+# ==============================================================================
+# 🛒 식자재 바로 구매 페이지 함수
+# ==============================================================================
+def purchase_page():
+    st.title("🛒 식자재 바로 구매하기")
+    st.markdown("필요한 식자재를 즉시 구매하세요.")
+    st.divider()
+    
+    # 구매 상품 목록
+    st.subheader("📋 구매 가능한 상품")
+    
+    # 주요 품목별 구매 옵션
+    items = ["쌀", "깐마늘(국산)", "양파"]
+    item_icons = {"쌀": "🍚", "깐마늘(국산)": "🧄", "양파": "🧅"}
+    item_units = {"쌀": "20kg", "깐마늘(국산)": "1kg", "양파": "10kg"}
+    
+    for item in items:
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col1:
+                st.markdown(f"<h4>{item_icons[item]} {item}</h4>", unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"**단위:** {item_units[item]}")
+                st.markdown("**배송:** 당일 배송 가능")
+            with col3:
+                if st.button(f"구매하기", key=f"buy_{item}"):
+                    st.success(f"{item} 구매 페이지로 이동합니다!")
+    
+    st.divider()
+    st.info("💡 AI 구매 팁을 참고하여 최적의 구매 시점을 선택하세요!")
+
+# ==============================================================================
+# 📅 식자재 예약 구매 페이지 함수
+# ==============================================================================
+def reservation_page():
+    st.title("📅 식자재 예약 구매하기")
+    st.markdown("핵심 수익 모델: 미래 가격 예측을 통한 예약 구매로 비용 절약")
+    st.divider()
+    
+    # 예약 구매 설명
+    st.subheader("💰 예약 구매의 장점")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **💵 비용 절약**
+        - AI 예측 기반 최적 가격에 구매
+        - 시장 변동성 리스크 최소화
+        """)
+    
+    with col2:
+        st.markdown("""
+        **📊 안정적 공급**
+        - 미리 확정된 가격으로 예산 관리
+        - 계절성 변동 대비
+        """)
+    
+    with col3:
+        st.markdown("""
+        **🎯 전략적 구매**
+        - 데이터 기반 의사결정
+        - 경쟁 우위 확보
+        """)
+    
+    st.divider()
+    
+    # 예약 구매 상품 선택
+    st.subheader("📋 예약 구매 상품 선택")
+    
+    items = ["쌀", "깐마늘(국산)", "양파"]
+    item_icons = {"쌀": "🍚", "깐마늘(국산)": "🧄", "양파": "🧅"}
+    
+    selected_item = st.selectbox("예약 구매할 상품을 선택하세요:", items)
+    
+    if selected_item:
+        st.markdown(f"### {item_icons[selected_item]} {selected_item} 예약 구매")
+        
+        # 예약 기간 선택
+        col1, col2 = st.columns(2)
+        with col1:
+            reservation_days = st.selectbox("예약 기간", [7, 14, 30], format_func=lambda x: f"{x}일 후")
+        with col2:
+            quantity = st.number_input("수량", min_value=1, max_value=100, value=1)
+        
+        # 예약 구매 버튼
+        if st.button("📅 예약 구매 신청", type="primary", use_container_width=True):
+            st.success(f"{selected_item} {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
+            st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
+
 # 페이지 선택에 따라 해당 함수를 호출합니다.
 if st.session_state.page == 'main':
     main_dashboard()
@@ -494,6 +555,10 @@ elif st.session_state.page == 'about':
 elif st.session_state.page == 'detail':
     # placeholder 코드를 삭제하고 실제 함수를 호출합니다.
     detail_page()
+elif st.session_state.page == 'purchase':
+    purchase_page()
+elif st.session_state.page == 'reservation':
+    reservation_page()
 
 # --- 페이지 전체 스타일링을 위한 CSS ---
 st.markdown("""
