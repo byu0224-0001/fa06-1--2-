@@ -195,6 +195,14 @@ def main_dashboard():
                     
                     # AI 구매 팁 추가
                     _add_ai_purchase_tip(item_name, history, prediction, st.session_state.predict_days)
+                else:
+                    # 오늘 시세일 때도 AI 구매 팁 표시 (3일 예측 기반)
+                    try:
+                        prediction = generate_future_predictions_for_item(item_name, history, 3)
+                        _add_ai_purchase_tip(item_name, history, prediction, 3)
+                    except Exception as e:
+                        st.error(f"{item_name} AI 구매 팁 생성 중 오류 발생: {str(e)}")
+                        continue
                 if st.button(f"상세 예측 보기", key=f"details_{item_name}", width='stretch'):
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
