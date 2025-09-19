@@ -810,10 +810,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 trend_14 = (recent_14.iloc[-1] - recent_14.iloc[0]) / recent_14.iloc[0] / len(recent_14)
                 trend_30 = (recent_30.iloc[-1] - recent_30.iloc[0]) / recent_30.iloc[0] / len(recent_30)
                 
-                # 가중 평균 (7일: 20%, 14일: 30%, 30일: 50%) - 장기 트렌드 중시
-                weighted_trend_rate = trend_7 * 0.2 + trend_14 * 0.3 + trend_30 * 0.5
-                # 트렌드 영향도 제한 (최대 1% 변화)
-                weighted_trend_rate = max(-0.01, min(0.01, weighted_trend_rate))
+                # 가중 평균 (7일: 30%, 14일: 40%, 30일: 30%) - 균형잡힌 가중치
+                weighted_trend_rate = trend_7 * 0.3 + trend_14 * 0.4 + trend_30 * 0.3
+                # 트렌드 영향도 제한 (최대 0.5% 변화로 더욱 제한)
+                weighted_trend_rate = max(-0.005, min(0.005, weighted_trend_rate))
                 trend_pred = df_work['가격'].iloc[-1] * (1 + weighted_trend_rate)
                 ensemble_preds.append(trend_pred)
             
@@ -872,12 +872,12 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             last_price = df_work['가격'].iloc[-1]
             
             # 쌀 가격의 특성 반영
-            # 1) 계절성 (수확기/비수확기)
+            # 1) 계절성 (수확기/비수확기) - 완화된 영향
             day_of_year = next_date.dayofyear
             if 240 <= day_of_year <= 300:  # 8월-10월 (수확기)
-                seasonal_factor = 0.98  # 수확기에는 가격 하락
+                seasonal_factor = 0.995  # 수확기에는 가격 하락 (0.5%로 완화)
             elif 60 <= day_of_year <= 120:  # 3월-4월 (비수확기)
-                seasonal_factor = 1.02  # 비수확기에는 가격 상승
+                seasonal_factor = 1.005  # 비수확기에는 가격 상승 (0.5%로 완화)
             else:
                 seasonal_factor = 1.0
             
@@ -918,10 +918,10 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                     change = (df_work['가격'].iloc[-i] - df_work['가격'].iloc[-i-1]) / df_work['가격'].iloc[-i-1]
                     recent_changes.append(abs(change))
                 avg_volatility = np.mean(recent_changes) if recent_changes else 0.01
-                # 평균 변동성의 1.5배를 최대 변화율로 설정 (더 보수적)
-                max_change = min(0.02, avg_volatility * 1.5)  # 최대 2%
+                # 평균 변동성의 1.2배를 최대 변화율로 설정 (매우 보수적)
+                max_change = min(0.015, avg_volatility * 1.2)  # 최대 1.5%
             else:
-                max_change = 0.015  # 최대 1.5% 변화
+                max_change = 0.01  # 최대 1% 변화
             
             # 강력한 클리핑
             final_pred = max(last_price * (1 - max_change), 
@@ -930,11 +930,23 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             # 7) 연속적 안정화 (이전 예측과의 연속성 보장)
             if len(preds) > 0:
                 prev_pred = preds[-1]['가격']
-                # 이전 예측과 1% 이상 차이나면 조정
-                if abs(final_pred - prev_pred) / prev_pred > 0.01:
+                # 이전 예측과 0.5% 이상 차이나면 조정 (더 엄격하게)
+                if abs(final_pred - prev_pred) / prev_pred > 0.005:
                     change_direction = 1 if final_pred > prev_pred else -1
-                    final_pred = prev_pred * (1 + change_direction * 0.01)
+                    final_pred = prev_pred * (1 + change_direction * 0.005)
                     print(f"연속성 조정: {prev_pred:.0f}원 → {final_pred:.0f}원")
+            
+            # 8) 하락 예측 안정화 (연속 하락 방지)
+            if len(preds) >= 2:
+                # 최근 2일 연속 하락이면 하락 속도 제한
+                recent_prices = [preds[-1]['가격'], preds[-2]['가격']]
+                if all(recent_prices[i] > recent_prices[i+1] for i in range(len(recent_prices)-1)):
+                    # 연속 하락 중이면 하락 속도를 50%로 제한
+                    if final_pred < last_price:
+                        decline_rate = (last_price - final_pred) / last_price
+                        limited_decline = decline_rate * 0.5  # 하락 속도 50% 제한
+                        final_pred = last_price * (1 - limited_decline)
+                        print(f"하락 안정화: {last_price:.0f}원 → {final_pred:.0f}원 (하락속도 50% 제한)")
             
             
             preds.append({'날짜': next_date, '가격': final_pred})
