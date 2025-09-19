@@ -805,14 +805,14 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 recent_14 = df_work['가격'].tail(14)
                 recent_30 = df_work['가격'].tail(30)
                 
-                # 가중 평균 트렌드 (최근일수록 높은 가중치)
-                trend_7 = (recent_7.iloc[-1] - recent_7.iloc[0]) / len(recent_7)
-                trend_14 = (recent_14.iloc[-1] - recent_14.iloc[0]) / len(recent_14)
-                trend_30 = (recent_30.iloc[-1] - recent_30.iloc[0]) / len(recent_30)
+                # 일일 변화율 기반 트렌드 계산 (수정)
+                trend_7 = (recent_7.iloc[-1] - recent_7.iloc[0]) / recent_7.iloc[0] / len(recent_7)  # 일일 변화율
+                trend_14 = (recent_14.iloc[-1] - recent_14.iloc[0]) / recent_14.iloc[0] / len(recent_14)
+                trend_30 = (recent_30.iloc[-1] - recent_30.iloc[0]) / recent_30.iloc[0] / len(recent_30)
                 
-                # 가중 평균 (7일: 50%, 14일: 30%, 30일: 20%)
-                weighted_trend = trend_7 * 0.5 + trend_14 * 0.3 + trend_30 * 0.2
-                trend_pred = df_work['가격'].iloc[-1] + weighted_trend
+                # 가중 평균 (7일: 30%, 14일: 40%, 30일: 30%) - 더 균형잡힌 가중치
+                weighted_trend_rate = trend_7 * 0.3 + trend_14 * 0.4 + trend_30 * 0.3
+                trend_pred = df_work['가격'].iloc[-1] * (1 + weighted_trend_rate)
                 ensemble_preds.append(trend_pred)
             
             # 방법 3: 고급 계절성 기반 예측
@@ -860,7 +860,8 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             
             # 앙상블 가중 평균 (XGBoost에 더 높은 가중치)
             if len(ensemble_preds) >= 2:
-                weights = [0.5] + [0.5 / (len(ensemble_preds) - 1)] * (len(ensemble_preds) - 1)
+                # XGBoost: 70%, 나머지: 30% (더 안정적)
+                weights = [0.7] + [0.3 / (len(ensemble_preds) - 1)] * (len(ensemble_preds) - 1)
                 final_pred = sum(pred * weight for pred, weight in zip(ensemble_preds, weights))
             else:
                 final_pred = y_hat
@@ -878,21 +879,11 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             else:
                 seasonal_factor = 1.0
             
-            # 2) 강력한 정부 개입 시뮬레이션
-            price_change_rate = (final_pred - last_price) / last_price
-            
-            if price_change_rate > 0.015:  # 1.5% 이상 상승 시 강력한 개입
-                intervention_factor = 0.95  # 5% 억제 (강력한 개입)
-                print(f"정부 개입: {price_change_rate*100:.1f}% 상승 → 5% 억제")
-            elif price_change_rate > 0.01:  # 1% 이상 상승 시 중간 개입
-                intervention_factor = 0.98  # 2% 억제
-                print(f"정부 개입: {price_change_rate*100:.1f}% 상승 → 2% 억제")
-            elif price_change_rate < -0.015:  # 1.5% 이상 하락 시 강력한 지원
-                intervention_factor = 1.05  # 5% 상승 (강력한 지원)
-                print(f"정부 지원: {price_change_rate*100:.1f}% 하락 → 5% 상승")
-            elif price_change_rate < -0.01:  # 1% 이상 하락 시 중간 지원
-                intervention_factor = 1.02  # 2% 상승
-                print(f"정부 지원: {price_change_rate*100:.1f}% 하락 → 2% 상승")
+            # 2) 정부 개입 시뮬레이션 (가격 급등 시 개입)
+            if final_pred > last_price * 1.03:  # 3% 이상 상승 시
+                intervention_factor = 0.995  # 정부 개입으로 가격 억제
+            elif final_pred < last_price * 0.97:  # 3% 이상 하락 시
+                intervention_factor = 1.005  # 정부 지원으로 가격 상승
             else:
                 intervention_factor = 1.0
             
@@ -906,30 +897,23 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
             # 4) 최종 예측값 계산
             final_pred = final_pred * seasonal_factor * intervention_factor * stability_factor
             
-            # 5) 강력한 예측값 안정화 (극단값 제한)
-            # 최근 3일 평균 변화율을 고려한 동적 제한
-            if len(df_work) >= 3:
+            # 5) 예측값 안정화 (극단값 제한)
+            # 최근 7일 평균 변화율을 고려한 동적 제한
+            if len(df_work) >= 7:
                 recent_changes = []
-                for i in range(1, min(4, len(df_work))):
+                for i in range(1, min(8, len(df_work))):
                     change = (df_work['가격'].iloc[-i] - df_work['가격'].iloc[-i-1]) / df_work['가격'].iloc[-i-1]
                     recent_changes.append(abs(change))
                 avg_volatility = np.mean(recent_changes) if recent_changes else 0.01
-                # 평균 변동성의 1.5배를 최대 변화율로 설정
-                max_change = min(0.015, avg_volatility * 1.5)  # 최대 1.5%
+                # 평균 변동성의 2배를 최대 변화율로 설정 (더 관대하게)
+                max_change = min(0.03, avg_volatility * 2)  # 최대 3%
             else:
-                max_change = 0.01  # 최대 1% 변화
+                max_change = 0.02  # 최대 2% 변화
             
             # 강력한 클리핑
             final_pred = max(last_price * (1 - max_change), 
                            min(last_price * (1 + max_change), final_pred))
             
-            # 6) 연속적 안정화 (이전 예측과의 연속성 보장)
-            if len(preds) > 0:
-                prev_pred = preds[-1]['가격']
-                # 이전 예측과 0.5% 이상 차이나면 조정
-                if abs(final_pred - prev_pred) / prev_pred > 0.005:
-                    final_pred = prev_pred * (1 + np.sign(final_pred - prev_pred) * 0.005)
-                    print(f"연속성 조정: {final_pred:.0f}원")
             
             preds.append({'날짜': next_date, '가격': final_pred})
             # 예측된 가격으로 업데이트
