@@ -15,10 +15,14 @@ try:
     import torch.optim as optim
     from torch.utils.data import DataLoader, TensorDataset
     from scipy.signal import butter, filtfilt
-except Exception:
+except Exception as e:
+    print(f"일부 패키지 import 실패: {e}")
     xgb = None
     StandardScaler = None
     MinMaxScaler = None
+    mean_squared_error = None
+    mean_absolute_error = None
+    r2_score = None
     joblib = None
     torch = None
     nn = None
@@ -42,14 +46,15 @@ def _get_device():
             _DEVICE = torch.device('cuda')
             print("GPU 사용: CUDA")
         else:
-            _DEVICE = torch.device('cpu')
+            _DEVICE = torch.device('cpu') if torch is not None else 'cpu'
             print("CPU 사용")
     return _DEVICE
 
 # -------------------------
 # DLinear 모델 정의 (원본 노트북과 동일)
 # -------------------------
-class MovingAverage(nn.Module):
+if nn is not None:
+    class MovingAverage(nn.Module):
     def __init__(self, kernel_size, stride=1):
         super(MovingAverage, self).__init__()
         self.kernel_size = kernel_size
@@ -63,31 +68,40 @@ class MovingAverage(nn.Module):
         x = x.permute(0, 2, 1)
         return x
 
-class DLinear(nn.Module):
-    def __init__(self, input_length, output_length, input_dim, kernel_size=25):
-        super(DLinear, self).__init__()
-        self.input_length = input_length
-        self.output_length = output_length
-        
-        self.moving_avg = MovingAverage(kernel_size)
-        self.linear_seasonal = nn.Linear(input_length, output_length)
-        self.linear_trend = nn.Linear(input_length, output_length)
-        self.regression_layer = nn.Linear(input_dim, 1)
+    class DLinear(nn.Module):
+        def __init__(self, input_length, output_length, input_dim, kernel_size=25):
+            super(DLinear, self).__init__()
+            self.input_length = input_length
+            self.output_length = output_length
+            
+            self.moving_avg = MovingAverage(kernel_size)
+            self.linear_seasonal = nn.Linear(input_length, output_length)
+            self.linear_trend = nn.Linear(input_length, output_length)
+            self.regression_layer = nn.Linear(input_dim, 1)
 
-    def forward(self, x):
-        seasonal_init = x
-        trend_init = self.moving_avg(x)
-        seasonal_init = seasonal_init - trend_init
+        def forward(self, x):
+            seasonal_init = x
+            trend_init = self.moving_avg(x)
+            seasonal_init = seasonal_init - trend_init
 
-        seasonal_output = self.linear_seasonal(seasonal_init.permute(0, 2, 1))
-        trend_output = self.linear_trend(trend_init.permute(0, 2, 1))
-        
-        seasonal_output = seasonal_output.permute(0, 2, 1)
-        trend_output = trend_output.permute(0, 2, 1)
-        
-        output = seasonal_output + trend_output
-        output = self.regression_layer(output)
-        return output
+            seasonal_output = self.linear_seasonal(seasonal_init.permute(0, 2, 1))
+            trend_output = self.linear_trend(trend_init.permute(0, 2, 1))
+            
+            seasonal_output = seasonal_output.permute(0, 2, 1)
+            trend_output = trend_output.permute(0, 2, 1)
+            
+            output = seasonal_output + trend_output
+            output = self.regression_layer(output)
+            return output
+else:
+    # PyTorch가 없을 때 더미 클래스
+    class MovingAverage:
+        def __init__(self, *args, **kwargs):
+            pass
+    
+    class DLinear:
+        def __init__(self, *args, **kwargs):
+            pass
 
 # -------------------------
 # 데이터 로드 및 전처리 (캐싱으로 최적화)
@@ -330,6 +344,10 @@ def _build_supervised(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
 # -------------------------
 def generate_dlinear_predictions(scaled_feature_df, sequence_length, batch_size, model):
     """스케일링된 피처 데이터프레임을 받아 DLinear 모델의 예측을 생성합니다."""
+    if torch is None or model is None:
+        # PyTorch가 없거나 모델이 없으면 더미 예측 반환
+        return [0.0] * (len(scaled_feature_df) - sequence_length + 1)
+    
     model.eval()
     device = _get_device()
     model.to(device)
@@ -409,112 +427,144 @@ def train_model(history: pd.DataFrame) -> None:
     input_dim = X_train_scaled.shape[1]
     batch_size = 32
     
-    dlinear_model = DLinear(sequence_length, predict_length, input_dim).to(device)
-    
-    # 데이터를 시퀀스 형태로 변환
-    def create_sequences(data, seq_len):
-        sequences = []
-        for i in range(len(data) - seq_len + 1):
-            sequences.append(data[i:i+seq_len])
-        return np.array(sequences)
-    
-    X_train_seq = create_sequences(X_train_scaled, sequence_length)
-    y_train_seq = y_train.iloc[sequence_length-1:].values
-    
-    if len(X_train_seq) > 0:
-        X_train_tensor = torch.FloatTensor(X_train_seq).to(device)
-        y_train_tensor = torch.FloatTensor(y_train_seq).unsqueeze(1).to(device)
+    # PyTorch가 없으면 DLinear 학습 건너뛰기
+    if torch is None:
+        print("PyTorch가 없어 DLinear 학습을 건너뜁니다.")
+        dlinear_preds_train = [0.0] * (len(X_train_scaled) - sequence_length + 1)
+        dlinear_preds_test = [0.0] * (len(X_test_scaled) - sequence_length + 1)
+    else:
+        dlinear_model = DLinear(sequence_length, predict_length, input_dim).to(device)
         
-        # DLinear 학습 (원본과 동일한 에포크 수)
-        optimizer = optim.Adam(dlinear_model.parameters(), lr=0.001)
-        criterion = nn.MSELoss()
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.1)
+        # 데이터를 시퀀스 형태로 변환
+        def create_sequences(data, seq_len):
+            sequences = []
+            for i in range(len(data) - seq_len + 1):
+                sequences.append(data[i:i+seq_len])
+            return np.array(sequences)
         
-        best_val_loss = float('inf')
-        patience = 10
-        epochs_without_improvement = 0
+        X_train_seq = create_sequences(X_train_scaled, sequence_length)
+        y_train_seq = y_train.iloc[sequence_length-1:].values
         
-        print(f"DLinear 학습 시작 (GPU: {device})...")
-        for epoch in range(100):  # 원본과 동일한 에포크 수
-            dlinear_model.train()
-            optimizer.zero_grad()
-            outputs = dlinear_model(X_train_tensor)
-            loss = criterion(outputs, y_train_tensor)
-            loss.backward()
-            optimizer.step()
+        if len(X_train_seq) > 0:
+            X_train_tensor = torch.FloatTensor(X_train_seq).to(device)
+            y_train_tensor = torch.FloatTensor(y_train_seq).unsqueeze(1).to(device)
             
-            if epoch % 20 == 0:
-                print(f'DLinear Epoch {epoch}, Loss: {loss.item():.6f}')
+            # DLinear 학습 (원본과 동일한 에포크 수)
+            optimizer = optim.Adam(dlinear_model.parameters(), lr=0.001)
+            criterion = nn.MSELoss()
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5, factor=0.1)
             
-            scheduler.step(loss.item())
+            best_val_loss = float('inf')
+            patience = 10
+            epochs_without_improvement = 0
             
-            if loss.item() < best_val_loss:
-                best_val_loss = loss.item()
-                epochs_without_improvement = 0
-                torch.save(dlinear_model.state_dict(), DLINEAR_PATH)
-            else:
-                epochs_without_improvement += 1
-                if epochs_without_improvement >= patience:
-                    print(f"조기 종료: {epoch} 에포크")
-                    break
-        
-        # DLinear 예측 생성 (원본 노트북과 동일)
-        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
-        dlinear_model.eval()
-        
-        print("DLinear 예측 생성 중...")
-        dlinear_preds_train = generate_dlinear_predictions(
-            pd.DataFrame(X_train_scaled), sequence_length, batch_size, dlinear_model
-        )
-        
-        # XGBoost 학습 (DLinear 예측 포함)
-        X_train_final = X_train_scaled[sequence_length-1:]
-        X_train_final = np.column_stack([X_train_final, dlinear_preds_train])
-        
-        X_test_seq = create_sequences(X_test_scaled, sequence_length)
-        if len(X_test_seq) > 0:
-            dlinear_preds_test = generate_dlinear_predictions(
-                pd.DataFrame(X_test_scaled), sequence_length, batch_size, dlinear_model
+            print(f"DLinear 학습 시작 (GPU: {device})...")
+            for epoch in range(100):  # 원본과 동일한 에포크 수
+                dlinear_model.train()
+                optimizer.zero_grad()
+                outputs = dlinear_model(X_train_tensor)
+                loss = criterion(outputs, y_train_tensor)
+                loss.backward()
+                optimizer.step()
+                
+                if epoch % 20 == 0:
+                    print(f'DLinear Epoch {epoch}, Loss: {loss.item():.6f}')
+                
+                scheduler.step(loss.item())
+                
+                if loss.item() < best_val_loss:
+                    best_val_loss = loss.item()
+                    epochs_without_improvement = 0
+                    torch.save(dlinear_model.state_dict(), DLINEAR_PATH)
+                else:
+                    epochs_without_improvement += 1
+                    if epochs_without_improvement >= patience:
+                        print(f"조기 종료: {epoch} 에포크")
+                        break
+            
+            # DLinear 예측 생성 (원본 노트북과 동일)
+            dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+            dlinear_model.eval()
+            
+            print("DLinear 예측 생성 중...")
+            dlinear_preds_train = generate_dlinear_predictions(
+                pd.DataFrame(X_train_scaled), sequence_length, batch_size, dlinear_model
             )
-            X_test_final = X_test_scaled[sequence_length-1:]
-            X_test_final = np.column_stack([X_test_final, dlinear_preds_test])
+            
+            # XGBoost 학습 (DLinear 예측 포함)
+            X_train_final = X_train_scaled[sequence_length-1:]
+            X_train_final = np.column_stack([X_train_final, dlinear_preds_train])
+            
+            X_test_seq = create_sequences(X_test_scaled, sequence_length)
+            if len(X_test_seq) > 0:
+                dlinear_preds_test = generate_dlinear_predictions(
+                    pd.DataFrame(X_test_scaled), sequence_length, batch_size, dlinear_model
+                )
+                X_test_final = X_test_scaled[sequence_length-1:]
+                X_test_final = np.column_stack([X_test_final, dlinear_preds_test])
+            else:
+                X_test_final = X_test_scaled
+            
+            # 44개 피처로 새로운 스케일러 생성
+            print("44개 피처로 새로운 스케일러 생성 중...")
+            final_scaler = StandardScaler()
+            X_train_final_scaled = final_scaler.fit_transform(X_train_final)
+            X_test_final_scaled = final_scaler.transform(X_test_final)
+            
+            y_train_final = y_train.iloc[sequence_length-1:]
+            y_test_final = y_test.iloc[sequence_length-1:] if len(X_test_seq) > 0 else y_test
+            
+            # XGBoost 모델 학습 (원본과 동일한 설정)
+            print("XGBoost 학습 중...")
+            xgb_model = xgb.XGBRegressor(
+                objective='reg:squarederror',
+                n_estimators=500,  # 원본과 동일
+                learning_rate=0.05,
+                max_depth=3,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                random_state=42,
+                early_stopping_rounds=50
+            )
+            
+            xgb_model.fit(
+                X_train_final_scaled, y_train_final,
+                eval_set=[(X_test_final_scaled, y_test_final)],
+                verbose=False
+            )
+        
+            # 모델 저장 (44개 피처용 스케일러 저장)
+            xgb_model.save_model(MODEL_PATH)
+            joblib.dump(final_scaler, SCALER_PATH)  # 44개 피처용 스케일러
+            joblib.dump(feature_cols, FEATURE_COLS_PATH)
+            
+            print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final_scaled))):.2f}")
         else:
-            X_test_final = X_test_scaled
-        
-        # 44개 피처로 새로운 스케일러 생성
-        print("44개 피처로 새로운 스케일러 생성 중...")
-        final_scaler = StandardScaler()
-        X_train_final_scaled = final_scaler.fit_transform(X_train_final)
-        X_test_final_scaled = final_scaler.transform(X_test_final)
-        
-        y_train_final = y_train.iloc[sequence_length-1:]
-        y_test_final = y_test.iloc[sequence_length-1:] if len(X_test_seq) > 0 else y_test
-        
-        # XGBoost 모델 학습 (원본과 동일한 설정)
-        print("XGBoost 학습 중...")
-        xgb_model = xgb.XGBRegressor(
-            objective='reg:squarederror',
-            n_estimators=500,  # 원본과 동일
-            learning_rate=0.05,
-            max_depth=3,
-            subsample=0.7,
-            colsample_bytree=0.7,
-            random_state=42,
-            early_stopping_rounds=50
-        )
-        
-        xgb_model.fit(
-            X_train_final_scaled, y_train_final,
-            eval_set=[(X_test_final_scaled, y_test_final)],
-            verbose=False
-        )
-        
-        # 모델 저장 (44개 피처용 스케일러 저장)
-        xgb_model.save_model(MODEL_PATH)
-        joblib.dump(final_scaler, SCALER_PATH)  # 44개 피처용 스케일러
-        joblib.dump(feature_cols, FEATURE_COLS_PATH)
-        
-        print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final_scaled))):.2f}")
+            # PyTorch가 없을 때는 43개 피처로만 학습
+            print("43개 피처로 XGBoost 학습 중...")
+            xgb_model = xgb.XGBRegressor(
+                objective='reg:squarederror',
+                n_estimators=500,
+                learning_rate=0.05,
+                max_depth=3,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                random_state=42,
+                early_stopping_rounds=50
+            )
+            
+            xgb_model.fit(
+                X_train_scaled, y_train,
+                eval_set=[(X_test_scaled, y_test)],
+                verbose=False
+            )
+            
+            # 모델 저장 (43개 피처용 스케일러 저장)
+            xgb_model.save_model(MODEL_PATH)
+            joblib.dump(scaler, SCALER_PATH)  # 43개 피처용 스케일러
+            joblib.dump(feature_cols, FEATURE_COLS_PATH)
+            
+            print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test, xgb_model.predict(X_test_scaled))):.2f}")
 
 def _load_model():
     if xgb is None:
@@ -627,28 +677,31 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 x_next = tmp_supervised[feature_cols].iloc[[-1]]
             
             # DLinear 예측 추가 (학습 시와 동일하게)
-            try:
-                # DLinear 모델 로드
-                dlinear_model = DLinear(30, 1, len(feature_cols)).to(_get_device())
-                if os.path.exists(DLINEAR_PATH):
-                    dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
-                    dlinear_model.eval()
-                    
-                    # 시퀀스 생성
-                    sequence_length = 30
-                    if len(tmp_supervised) >= sequence_length:
-                        # 마지막 30개 행으로 시퀀스 생성
-                        seq_data = tmp_supervised[feature_cols].iloc[-sequence_length:].values
-                        seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
+            if torch is not None:
+                try:
+                    # DLinear 모델 로드
+                    dlinear_model = DLinear(30, 1, len(feature_cols)).to(_get_device())
+                    if os.path.exists(DLINEAR_PATH):
+                        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+                        dlinear_model.eval()
                         
-                        with torch.no_grad():
-                            dlinear_pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
+                        # 시퀀스 생성
+                        sequence_length = 30
+                        if len(tmp_supervised) >= sequence_length:
+                            # 마지막 30개 행으로 시퀀스 생성
+                            seq_data = tmp_supervised[feature_cols].iloc[-sequence_length:].values
+                            seq_tensor = torch.FloatTensor(seq_data).unsqueeze(0).to(_get_device())
+                            
+                            with torch.no_grad():
+                                dlinear_pred = dlinear_model(seq_tensor).cpu().numpy()[0][0]
+                        else:
+                            dlinear_pred = 0.0
                     else:
                         dlinear_pred = 0.0
-                else:
+                except Exception as e:
+                    print(f"DLinear 예측 생성 실패: {e}")
                     dlinear_pred = 0.0
-            except Exception as e:
-                print(f"DLinear 예측 생성 실패: {e}")
+            else:
                 dlinear_pred = 0.0
             
             # DLinear 예측을 피처에 추가
