@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from rice_backend import get_rice_history, predict_rice_price
+from rice_backend import get_item_history, predict_item_price, get_rice_history, predict_rice_price
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
@@ -21,62 +21,39 @@ st.set_page_config(
 @st.cache_data
 def load_and_prepare_data(item_name):
     """
-    초기 데이터를 로딩하고, 품목별로 가격대를 다르게 시뮬레이션합니다.
+    모든 품목에 대해 백엔드에서 실제 데이터를 로딩합니다.
     """
-    base_price = 52000
-    if item_name == "건고추": base_price = 25000
-    elif item_name == "양파": base_price = 18000
-
-    # 쌀: 백엔드 원시 단위 그대로 사용 (스케일링 없음)
-    if item_name == "쌀":
-        try:
-            data = get_rice_history(days=365)
-            if data.empty or len(data) == 0:
-                raise ValueError("빈 데이터 반환")
-            return data
-        except Exception as e:
-            print(f"쌀 데이터 로드 오류: {e}")
-            dates = pd.to_datetime(pd.date_range(end=datetime.today(), periods=365))
-            prices = np.full(365, base_price)
-            return pd.DataFrame({'날짜': dates, '가격': prices})
-    
-    # 그 외 품목: CSV 기반 시뮬레이션(프런트 스케일 적용)
     try:
-        encodings_to_try = ['utf-8-sig', 'utf-8', 'cp949', 'ISO-8859-1']
-        df = None
-        last_error = None
-        for enc in encodings_to_try:
-            try:
-                df = pd.read_csv('rice.csv', encoding=enc, encoding_errors='replace')
-                if '날짜' in df.columns and '가격(20kg)' in df.columns:
-                    break
-            except Exception as e:
-                last_error = e
-                continue
-        if df is None or '날짜' not in df.columns:
-            raise FileNotFoundError(str(last_error))
-        df['날짜'] = pd.to_datetime(df['날짜'])
-        price_history = df.groupby('날짜')['가격(20kg)'].mean().reset_index()
-        price_history = price_history.sort_values('날짜').tail(365)
-        price_history.rename(columns={'가격(20kg)': '가격'}, inplace=True)
-        price_history['가격'] = price_history['가격'] / price_history['가격'].mean() * base_price
-        return price_history
-    except FileNotFoundError:
+        data = get_item_history(item_name, days=365)
+        if data.empty or len(data) == 0:
+            raise ValueError("빈 데이터 반환")
+        return data
+    except Exception as e:
+        print(f"{item_name} 데이터 로드 오류: {e}")
+        # 품목별 기본 가격 설정
+        base_prices = {
+            "쌀": 52000, "감자": 3000, "배추": 2000, "양파": 18000, "오이": 4000,
+            "상추": 1500, "무": 1000, "파": 2000, "건고추": 25000,
+            "깐마늘(국산)": 8000, "깐마늘(수입)": 6000
+        }
+        base_price = base_prices.get(item_name, 5000)
         dates = pd.to_datetime(pd.date_range(end=datetime.today(), periods=365))
         prices = np.full(365, base_price)
         return pd.DataFrame({'날짜': dates, '가격': prices})
 
 def generate_future_predictions_for_item(item_name, price_history, days_to_predict):
-    # 쌀: 백엔드 예측(결정론적) 사용
-    if item_name == "쌀":
-        return predict_rice_price(price_history, days_to_predict)
-    # 그 외 품목: 결정론적 선형 추세 시뮬레이션 (노이즈 제거)
-    last_date = price_history['날짜'].max()
-    last_price = float(price_history['가격'].iloc[-1])
-    trend = np.linspace(1.0, 1.0 + 0.10, days_to_predict)  # 최대 +10%
-    future_dates = pd.to_datetime(pd.date_range(start=last_date + timedelta(days=1), periods=days_to_predict))
-    future_prices = (last_price * trend).astype(float)
-    return pd.DataFrame({'날짜': future_dates, '가격': future_prices})
+    # 모든 품목: 백엔드 예측 사용
+    try:
+        return predict_item_price(item_name, price_history, days_to_predict)
+    except Exception as e:
+        print(f"{item_name} 예측 오류: {e}")
+        # 폴백: 간단한 트렌드 기반 예측
+        last_date = price_history['날짜'].max()
+        last_price = float(price_history['가격'].iloc[-1])
+        trend = np.linspace(1.0, 1.0 + 0.10, days_to_predict)  # 최대 +10%
+        future_dates = pd.to_datetime(pd.date_range(start=last_date + timedelta(days=1), periods=days_to_predict))
+        future_prices = (last_price * trend).astype(float)
+        return pd.DataFrame({'날짜': future_dates, '가격': future_prices})
 
 # ==============================================================================
 # 🧭 사이드바 UI: 페이지 네비게이션 메뉴 (DOCX 파일 기반)
@@ -268,13 +245,9 @@ def detail_page():
     )
     st.session_state.predict_days = predict_days
 
-    # 백엔드 연동: 쌀은 실제 백엔드 데이터/예측 사용, 그 외 품목은 기존 시뮬레이션 유지
-    if item_name == "쌀":
-        price_history = get_rice_history(days=365)
-        predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
-    else:
-        price_history = load_and_prepare_data(item_name)
-        predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
+    # 모든 품목: 백엔드 연동으로 실제 데이터/예측 사용
+    price_history = load_and_prepare_data(item_name)
+    predictions = generate_future_predictions_for_item(item_name, price_history, predict_days)
     
     # 데이터 검증
     if price_history.empty or len(price_history) == 0:

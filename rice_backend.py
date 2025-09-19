@@ -178,17 +178,46 @@ def _load_all_data() -> pd.DataFrame:
     _CACHED_DATA = df.copy()
     return df
 
-def get_rice_history(days: int = 365) -> pd.DataFrame:
+def get_item_history(item_name: str, days: int = 365) -> pd.DataFrame:
+    """모든 품목에 대한 히스토리 데이터 반환"""
     try:
-        # 완전한 데이터셋에서 쌀 가격만 추출
+        # 완전한 데이터셋에서 해당 품목 가격 추출
         full_data = _load_all_data()
         
         if full_data.empty:
             raise ValueError("데이터가 비어있습니다")
-        if '가격' not in full_data.columns:
-            raise ValueError(f"가격 컬럼이 없습니다. 사용 가능한 컬럼: {full_data.columns.tolist()}")
+        
+        # 품목별 가격 컬럼 매핑
+        price_columns = {
+            '쌀': '가격',
+            '감자': '감자_가격',
+            '배추': '배추_가격', 
+            '양파': '양파_가격',
+            '오이': '오이_가격',
+            '상추': '상추_가격',
+            '무': '무_가격',
+            '파': '파_가격',
+            '건고추': '건고추_가격',
+            '깐마늘(국산)': '깐마늘_국산_가격',
+            '깐마늘(수입)': '깐마늘_수입_가격'
+        }
+        
+        price_col = price_columns.get(item_name, '가격')
+        
+        if price_col not in full_data.columns:
+            # 해당 품목 데이터가 없으면 시뮬레이션 데이터 생성
+            dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
+            base_prices = {
+                '감자': 3000, '배추': 2000, '양파': 2500, '오이': 4000,
+                '상추': 1500, '무': 1000, '파': 2000, '건고추': 15000,
+                '깐마늘(국산)': 8000, '깐마늘(수입)': 6000
+            }
+            base_price = base_prices.get(item_name, 5000)
+            prices = np.full(days, base_price)
+            return pd.DataFrame({'날짜': pd.to_datetime(dates), '가격': prices})
             
-        hist = full_data[['날짜', '가격']].copy()
+        hist = full_data[['날짜', price_col]].copy()
+        hist.rename(columns={price_col: '가격'}, inplace=True)
         
         # 가격 데이터 검증
         hist = hist.dropna(subset=['가격'])
@@ -198,12 +227,22 @@ def get_rice_history(days: int = 365) -> pd.DataFrame:
     except Exception as e:
         # 오류 발생 시 기본 데이터 반환
         dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
-        prices = np.full(days, 52000.0)
+        base_prices = {
+            '쌀': 52000, '감자': 3000, '배추': 2000, '양파': 2500, '오이': 4000,
+            '상추': 1500, '무': 1000, '파': 2000, '건고추': 15000,
+            '깐마늘(국산)': 8000, '깐마늘(수입)': 6000
+        }
+        base_price = base_prices.get(item_name, 5000)
+        prices = np.full(days, base_price)
         return pd.DataFrame({'날짜': pd.to_datetime(dates), '가격': prices})
     
     if days is not None and days > 0:
         hist = hist.tail(days)
     return hist.reset_index(drop=True)
+
+def get_rice_history(days: int = 365) -> pd.DataFrame:
+    """쌀 히스토리 (하위 호환성)"""
+    return get_item_history('쌀', days)
 
 # -------------------------
 # 고급 피처 엔지니어링 (원본 노트북과 동일)
@@ -499,6 +538,39 @@ def _load_feature_cols():
 # -------------------------
 # 재귀적 예측 (원본 노트북과 동일한 성능)
 # -------------------------
+def predict_item_price(item_name: str, history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
+    """모든 품목에 대한 가격 예측"""
+    # 쌀의 경우 기존 고급 모델 사용
+    if item_name == '쌀':
+        return predict_rice_price(history, days_to_predict)
+    
+    # 다른 품목의 경우 간단한 트렌드 기반 예측
+    history = history.sort_values('날짜').reset_index(drop=True)
+    
+    last_date = history['날짜'].max()
+    last_price = float(history['가격'].iloc[-1])
+    
+    # 최근 30일 트렌드 계산
+    recent_prices = history['가격'].tail(30)
+    if len(recent_prices) >= 7:
+        ma7 = recent_prices.tail(7).mean()
+        ma30 = recent_prices.mean()
+        trend = (ma7 - ma30) / max(1.0, ma30) * 0.1  # 10% 가중치
+    else:
+        trend = 0.0
+    
+    preds = []
+    current = last_price
+    
+    for i in range(days_to_predict):
+        next_date = last_date + timedelta(days=i+1)
+        # 트렌드 + 약간의 랜덤 변동
+        change = trend + np.random.normal(0, 0.02)  # 2% 표준편차
+        current = current * (1 + change)
+        preds.append({'날짜': next_date, '가격': float(current)})
+    
+    return pd.DataFrame(preds)
+
 def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
     history = history.sort_values('날짜').reset_index(drop=True)
 
