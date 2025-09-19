@@ -910,18 +910,14 @@ def predict_advanced_price(item_name: str, history: pd.DataFrame, days_to_predic
             # 4) 최종 예측값 계산
             final_pred = final_pred * seasonal_factor * intervention_factor * stability_factor
             
-            # 5) 연속성 보장 (실제 데이터와 예측 데이터 간의 부드러운 연결)
+            # 5) 연속성 보장 (실제 데이터와 예측 데이터 간의 부드러운 연결) - 비활성화
+            # 연속성 조정을 비활성화하여 모델의 자연스러운 예측을 허용
             if day_idx == 0:  # 첫 번째 예측일 때만
                 last_actual_price = df_work['가격'].iloc[-1]
-                # 실제 가격과 예측 가격의 차이가 2% 이상이면 조정
-                price_diff_ratio = abs(final_pred - last_actual_price) / last_actual_price
-                if price_diff_ratio > 0.02:  # 2% 이상 차이
-                    # 실제 가격에서 0.5% 변화로 시작
-                    change_direction = 1 if final_pred > last_actual_price else -1
-                    final_pred = last_actual_price * (1 + change_direction * 0.005)
-                    print(f"연속성 조정: {last_actual_price:.0f}원 → {final_pred:.0f}원 (차이: {price_diff_ratio*100:.1f}%)")
+                # 연속성 조정을 완전히 비활성화하고 모델 예측값을 그대로 사용
+                print(f"모델 예측값 사용: {last_actual_price:.0f}원 → {final_pred:.0f}원")
             
-            # 6) 예측값 안정화 (극단값 제한)
+            # 6) 예측값 안정화 (극단값 제한) - 강화
             # 최근 7일 평균 변화율을 고려한 동적 제한
             if len(df_work) >= 7:
                 recent_changes = []
@@ -929,8 +925,8 @@ def predict_advanced_price(item_name: str, history: pd.DataFrame, days_to_predic
                     change = (df_work['가격'].iloc[-i] - df_work['가격'].iloc[-i-1]) / df_work['가격'].iloc[-i-1]
                     recent_changes.append(abs(change))
                 avg_volatility = np.mean(recent_changes) if recent_changes else 0.01
-                # 평균 변동성의 1.2배를 최대 변화율로 설정 (매우 보수적)
-                max_change = min(0.015, avg_volatility * 1.2)  # 최대 1.5%
+                # 평균 변동성의 1.0배를 최대 변화율로 설정 (강화)
+                max_change = min(0.015, avg_volatility * 1.0)  # 최대 1.5%
             else:
                 max_change = 0.01  # 최대 1% 변화
             
@@ -938,26 +934,32 @@ def predict_advanced_price(item_name: str, history: pd.DataFrame, days_to_predic
             final_pred = max(last_price * (1 - max_change), 
                            min(last_price * (1 + max_change), final_pred))
             
-            # 7) 연속적 안정화 (이전 예측과의 연속성 보장)
+            # 7) 연속적 안정화 (이전 예측과의 연속성 보장) - 비활성화
+            # 연속적 안정화를 비활성화하여 모델의 자연스러운 예측을 허용
             if len(preds) > 0:
                 prev_pred = preds[-1]['가격']
-                # 이전 예측과 0.5% 이상 차이나면 조정 (더 엄격하게)
-                if abs(final_pred - prev_pred) / prev_pred > 0.005:
-                    change_direction = 1 if final_pred > prev_pred else -1
-                    final_pred = prev_pred * (1 + change_direction * 0.005)
-                    print(f"연속성 조정: {prev_pred:.0f}원 → {final_pred:.0f}원")
+                # 연속적 안정화를 완전히 비활성화
+                print(f"모델 예측값 사용: {prev_pred:.0f}원 → {final_pred:.0f}원")
             
-            # 8) 하락 예측 안정화 (연속 하락 방지)
+            # 8) 상승/하락 예측 안정화 (연속 급변동 방지)
             if len(preds) >= 2:
-                # 최근 2일 연속 하락이면 하락 속도 제한
                 recent_prices = [preds[-1]['가격'], preds[-2]['가격']]
+                
+                # 연속 하락 방지
                 if all(recent_prices[i] > recent_prices[i+1] for i in range(len(recent_prices)-1)):
-                    # 연속 하락 중이면 하락 속도를 50%로 제한
                     if final_pred < last_price:
                         decline_rate = (last_price - final_pred) / last_price
                         limited_decline = decline_rate * 0.5  # 하락 속도 50% 제한
                         final_pred = last_price * (1 - limited_decline)
                         print(f"하락 안정화: {last_price:.0f}원 → {final_pred:.0f}원 (하락속도 50% 제한)")
+                
+                # 연속 상승 방지 (새로 추가)
+                elif all(recent_prices[i] < recent_prices[i+1] for i in range(len(recent_prices)-1)):
+                    if final_pred > last_price:
+                        rise_rate = (final_pred - last_price) / last_price
+                        limited_rise = rise_rate * 0.7  # 상승 속도 70% 제한
+                        final_pred = last_price * (1 + limited_rise)
+                        print(f"상승 안정화: {last_price:.0f}원 → {final_pred:.0f}원 (상승속도 70% 제한)")
             
             
             preds.append({'날짜': next_date, '가격': final_pred})
