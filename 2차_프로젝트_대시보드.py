@@ -176,6 +176,14 @@ def main_dashboard():
                     change_text = "올랐어요!" if daily_change > 0 else "내렸어요."
                     st.markdown(f"<h2 style='display: inline;'>{int(current_price):,}원</h2> <span style='color:{price_color};'>{price_arrow} {int(abs(daily_change)):,}</span>", unsafe_allow_html=True)
                     st.markdown(f"<p style='margin-top:0.5rem;'>어제보다 {int(abs(daily_change)):,}원 {change_text}</p>", unsafe_allow_html=True)
+                    
+                    # 오늘 시세일 때도 AI 구매 팁 표시 (3일 예측 기반)
+                    try:
+                        prediction = generate_future_predictions_for_item(item_name, history, 3)
+                        _add_ai_purchase_tip(item_name, history, prediction, 3)
+                    except Exception as e:
+                        st.error(f"{item_name} AI 구매 팁 생성 중 오류 발생: {str(e)}")
+                        continue
                 else:
                     try:
                         prediction = generate_future_predictions_for_item(item_name, history, st.session_state.predict_days)
@@ -195,14 +203,6 @@ def main_dashboard():
                     
                     # AI 구매 팁 추가
                     _add_ai_purchase_tip(item_name, history, prediction, st.session_state.predict_days)
-                else:
-                    # 오늘 시세일 때도 AI 구매 팁 표시 (3일 예측 기반)
-                    try:
-                        prediction = generate_future_predictions_for_item(item_name, history, 3)
-                        _add_ai_purchase_tip(item_name, history, prediction, 3)
-                    except Exception as e:
-                        st.error(f"{item_name} AI 구매 팁 생성 중 오류 발생: {str(e)}")
-                        continue
                 if st.button(f"상세 예측 보기", key=f"details_{item_name}", width='stretch'):
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
