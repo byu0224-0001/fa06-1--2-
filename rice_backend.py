@@ -106,12 +106,14 @@ else:
 # -------------------------
 # 데이터 로드 및 전처리 (캐싱으로 최적화)
 # -------------------------
-def _load_all_data() -> pd.DataFrame:
-    """원본 노트북과 동일한 데이터 로드 및 전처리 (캐싱 적용)"""
+def _load_all_data(item_name: str = '쌀') -> pd.DataFrame:
+    """모든 품목에 대한 데이터 로드 및 전처리 (캐싱 적용)"""
     global _CACHED_DATA
     
-    if _CACHED_DATA is not None:
-        return _CACHED_DATA.copy()
+    # 캐시 키를 품목별로 구분
+    cache_key = f"{item_name}_data"
+    if _CACHED_DATA is not None and hasattr(_CACHED_DATA, 'get') and _CACHED_DATA.get(cache_key) is not None:
+        return _CACHED_DATA[cache_key].copy()
     
     try:
         # 1) 환율 데이터 (원본 노트북과 동일한 방식)
@@ -149,69 +151,86 @@ def _load_all_data() -> pd.DataFrame:
         df_weather = pd.DataFrame({'날짜': [pd.Timestamp.today()], '누적평균기온': [15.0], '누적일조합': [6.0]})
 
     try:
-        # 4) 쌀 데이터 (원본 노트북과 동일한 방식)
-        df_rice = pd.read_csv('data/rice.csv')
-        # 불필요한 컬럼 제거
-        df_rice.drop(['품목명','품종명','시장명','지역명'], axis=1, inplace=True)
-        # 컬럼명 설정
-        df_rice.columns = ['날짜', '가격']
-        df_rice['날짜'] = pd.to_datetime(df_rice['날짜'], format='%Y-%m-%d')
-        df_rice['가격'] = df_rice['가격'].astype(float)
-        df_rice = df_rice.groupby('날짜').mean().reset_index()
-        df_rice = df_rice.dropna(subset=['날짜'])
+        # 4) 품목별 데이터 로드
+        df_item = _load_item_data(item_name)
     except Exception:
-        df_rice = pd.DataFrame({'날짜': [pd.Timestamp.today()], '가격': [52000.0]})
+        # 기본값 설정
+        base_prices = {
+            '쌀': 52000, '감자': 3000, '배추': 2000, '양파': 2500, '오이': 4000,
+            '상추': 1500, '무': 1000, '파': 2000, '건고추': 15000,
+            '깐마늘(국산)': 8000, '깐마늘(수입)': 6000
+        }
+        base_price = base_prices.get(item_name, 5000)
+        df_item = pd.DataFrame({'날짜': [pd.Timestamp.today()], '가격': [base_price]})
 
     # 5) 모든 데이터 병합
     new = pd.merge(df_exchange, df_oil, how='inner', on='날짜')
     new2 = pd.merge(new, df_weather, how='inner', on='날짜')
-    df = pd.merge(new2, df_rice, how='inner', on='날짜')
+    df = pd.merge(new2, df_item, how='inner', on='날짜')
     df = df.sort_values('날짜').reset_index(drop=True)
     
-    # 캐싱
-    _CACHED_DATA = df.copy()
+    # 캐싱 (품목별로)
+    if _CACHED_DATA is None:
+        _CACHED_DATA = {}
+    _CACHED_DATA[cache_key] = df.copy()
+    return df
+
+def _load_item_data(item_name: str) -> pd.DataFrame:
+    """품목별 데이터 로드 및 전처리"""
+    # 품목별 파일 매핑
+    file_mapping = {
+        '쌀': 'data/rice.csv',
+        '감자': '감자_도매_데이터.xlsx',
+        '배추': '배추_도매_데이터.xlsx',
+        '양파': '양파_도매_데이터.xlsx',
+        '오이': '오이_도매_데이터.xlsx',
+        '상추': '상추_도매.xlsx',
+        '무': '무_도매.xlsx',
+        '파': '파_도매.xlsx',
+        '건고추': '건고추_도매_데이터.xlsx',
+        '깐마늘(국산)': '깐마늘(국산)_도매_데이터.xlsx',
+        '깐마늘(수입)': '깐마늘(수입)_도매_데이터.xlsx'
+    }
+    
+    file_path = file_mapping.get(item_name, 'data/rice.csv')
+    
+    if file_path.endswith('.csv'):
+        # CSV 파일 처리 (쌀)
+        df = pd.read_csv(file_path)
+        # 불필요한 컬럼 제거
+        if '품목명' in df.columns:
+            df.drop(['품목명','품종명','시장명','지역명'], axis=1, inplace=True)
+        # 컬럼명 설정
+        df.columns = ['날짜', '가격']
+        df['날짜'] = pd.to_datetime(df['날짜'], format='%Y-%m-%d')
+        df['가격'] = df['가격'].astype(float)
+    else:
+        # Excel 파일 처리 (다른 품목들)
+        df = pd.read_excel(file_path)
+        # 컬럼명을 표준화
+        df.columns = ['날짜', '품목', '품종', '거래단위', '등급', '평균가격', '전일', '전년']
+        df['날짜'] = pd.to_datetime(df['날짜'])
+        df['가격'] = df['평균가격'].astype(float)
+        # 불필요한 컬럼 제거
+        df = df[['날짜', '가격']]
+    
+    # 날짜별 평균 가격 계산
+    df = df.groupby('날짜')['가격'].mean().reset_index()
+    df = df.dropna(subset=['날짜', '가격'])
+    
     return df
 
 def get_item_history(item_name: str, days: int = 365) -> pd.DataFrame:
     """모든 품목에 대한 히스토리 데이터 반환"""
     try:
-        # 완전한 데이터셋에서 해당 품목 가격 추출
-        full_data = _load_all_data()
+        # 품목별 데이터 로드
+        full_data = _load_all_data(item_name)
         
         if full_data.empty:
             raise ValueError("데이터가 비어있습니다")
         
-        # 품목별 가격 컬럼 매핑
-        price_columns = {
-            '쌀': '가격',
-            '감자': '감자_가격',
-            '배추': '배추_가격', 
-            '양파': '양파_가격',
-            '오이': '오이_가격',
-            '상추': '상추_가격',
-            '무': '무_가격',
-            '파': '파_가격',
-            '건고추': '건고추_가격',
-            '깐마늘(국산)': '깐마늘_국산_가격',
-            '깐마늘(수입)': '깐마늘_수입_가격'
-        }
-        
-        price_col = price_columns.get(item_name, '가격')
-        
-        if price_col not in full_data.columns:
-            # 해당 품목 데이터가 없으면 시뮬레이션 데이터 생성
-            dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
-            base_prices = {
-                '감자': 3000, '배추': 2000, '양파': 2500, '오이': 4000,
-                '상추': 1500, '무': 1000, '파': 2000, '건고추': 15000,
-                '깐마늘(국산)': 8000, '깐마늘(수입)': 6000
-            }
-            base_price = base_prices.get(item_name, 5000)
-            prices = np.full(days, base_price)
-            return pd.DataFrame({'날짜': pd.to_datetime(dates), '가격': prices})
-            
-        hist = full_data[['날짜', price_col]].copy()
-        hist.rename(columns={price_col: '가격'}, inplace=True)
+        # 가격 데이터 추출
+        hist = full_data[['날짜', '가격']].copy()
         
         # 가격 데이터 검증
         hist = hist.dropna(subset=['가격'])
@@ -219,6 +238,7 @@ def get_item_history(item_name: str, days: int = 365) -> pd.DataFrame:
             raise ValueError("유효한 가격 데이터가 없습니다")
             
     except Exception as e:
+        print(f"데이터 로드 오류 ({item_name}): {e}")
         # 오류 발생 시 기본 데이터 반환
         dates = pd.date_range(end=pd.Timestamp.today().normalize(), periods=days)
         base_prices = {
@@ -355,10 +375,14 @@ def generate_dlinear_predictions(scaled_feature_df, sequence_length, batch_size,
 # -------------------------
 # 모델 학습/저장/로드 (원본 노트북과 동일한 성능, 최적화)
 # -------------------------
-MODEL_PATH = 'xgb_model.json'
-SCALER_PATH = 'scaler.pkl'
-DLINEAR_PATH = 'best_dlinear_model.pth'
-FEATURE_COLS_PATH = 'feature_cols.pkl'
+def _get_model_paths(item_name: str):
+    """품목별 모델 경로 반환"""
+    return {
+        'model': f'models/{item_name}_xgb_model.json',
+        'scaler': f'models/{item_name}_scaler.pkl',
+        'dlinear': f'models/{item_name}_dlinear_model.pth',
+        'features': f'models/{item_name}_feature_cols.pkl'
+    }
 
 def _clean_numeric_frame(df):
     """NaN/Inf 값 정리 (원본 노트북과 동일)"""
@@ -369,19 +393,25 @@ def _clean_numeric_frame(df):
         df[col] = df[col].fillna(median_val if not pd.isna(median_val) else 0)
     return df
 
-def train_model(history: pd.DataFrame) -> None:
-    """원본 노트북과 동일한 방식으로 모델 학습 (최적화)"""
+def train_model(history: pd.DataFrame, item_name: str = '쌀') -> None:
+    """품목별 모델 학습 (최적화)"""
     if xgb is None or StandardScaler is None or torch is None:
         return
     
-    print("모델 학습 시작...")
+    print(f"{item_name} 모델 학습 시작...")
     device = _get_device()
     
-    # 완전한 데이터셋으로 학습
-    full_data = _load_all_data()
+    # models 디렉토리 생성
+    os.makedirs('models', exist_ok=True)
+    
+    # 품목별 모델 경로
+    paths = _get_model_paths(item_name)
+    
+    # 품목별 데이터셋으로 학습
+    full_data = _load_all_data(item_name)
     df_sup, feature_cols = _build_supervised(full_data)
     if len(df_sup) < 50:
-        print("데이터가 부족합니다.")
+        print(f"{item_name} 데이터가 부족합니다.")
         return
     
     X = df_sup[feature_cols]
@@ -455,7 +485,7 @@ def train_model(history: pd.DataFrame) -> None:
                 if loss.item() < best_val_loss:
                     best_val_loss = loss.item()
                     epochs_without_improvement = 0
-                    torch.save(dlinear_model.state_dict(), DLINEAR_PATH)
+                    torch.save(dlinear_model.state_dict(), paths['dlinear'])
                 else:
                     epochs_without_improvement += 1
                     if epochs_without_improvement >= patience:
@@ -463,7 +493,7 @@ def train_model(history: pd.DataFrame) -> None:
                         break
             
             # DLinear 예측 생성 (원본 노트북과 동일)
-            dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+            dlinear_model.load_state_dict(torch.load(paths['dlinear']))
             dlinear_model.eval()
             
             print("DLinear 예측 생성 중...")
@@ -514,9 +544,9 @@ def train_model(history: pd.DataFrame) -> None:
             )
         
             # 모델 저장 (44개 피처용 스케일러 저장)
-            xgb_model.save_model(MODEL_PATH)
-            joblib.dump(final_scaler, SCALER_PATH)  # 44개 피처용 스케일러
-            joblib.dump(feature_cols, FEATURE_COLS_PATH)
+            xgb_model.save_model(paths['model'])
+            joblib.dump(final_scaler, paths['scaler'])  # 44개 피처용 스케일러
+            joblib.dump(feature_cols, paths['features'])
             
             print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test_final, xgb_model.predict(X_test_final_scaled))):.2f}")
         else:
@@ -540,84 +570,64 @@ def train_model(history: pd.DataFrame) -> None:
             )
             
             # 모델 저장 (43개 피처용 스케일러 저장)
-            xgb_model.save_model(MODEL_PATH)
-            joblib.dump(scaler, SCALER_PATH)  # 43개 피처용 스케일러
-            joblib.dump(feature_cols, FEATURE_COLS_PATH)
+            xgb_model.save_model(paths['model'])
+            joblib.dump(scaler, paths['scaler'])  # 43개 피처용 스케일러
+            joblib.dump(feature_cols, paths['features'])
             
             print(f"모델 학습 완료! XGBoost RMSE: {np.sqrt(mean_squared_error(y_test, xgb_model.predict(X_test_scaled))):.2f}")
 
-def _load_model():
+def _load_model(item_name: str = '쌀'):
     if xgb is None:
         return None
-    if not os.path.exists(MODEL_PATH):
+    paths = _get_model_paths(item_name)
+    if not os.path.exists(paths['model']):
         return None
     m = xgb.XGBRegressor()
-    m.load_model(MODEL_PATH)
+    m.load_model(paths['model'])
     return m
 
-def _load_scaler():
-    if joblib is None or not os.path.exists(SCALER_PATH):
+def _load_scaler(item_name: str = '쌀'):
+    if joblib is None:
         return None
-    return joblib.load(SCALER_PATH)
+    paths = _get_model_paths(item_name)
+    if not os.path.exists(paths['scaler']):
+        return None
+    return joblib.load(paths['scaler'])
 
-def _load_feature_cols():
-    if joblib is None or not os.path.exists(FEATURE_COLS_PATH):
+def _load_feature_cols(item_name: str = '쌀'):
+    if joblib is None:
         return None
-    return joblib.load(FEATURE_COLS_PATH)
+    paths = _get_model_paths(item_name)
+    if not os.path.exists(paths['features']):
+        return None
+    return joblib.load(paths['features'])
 
 # -------------------------
 # 재귀적 예측 (원본 노트북과 동일한 성능)
 # -------------------------
 def predict_item_price(item_name: str, history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
-    """모든 품목에 대한 가격 예측"""
-    # 쌀의 경우 기존 고급 모델 사용
-    if item_name == '쌀':
-        return predict_rice_price(history, days_to_predict)
-    
-    # 다른 품목의 경우 간단한 트렌드 기반 예측
-    history = history.sort_values('날짜').reset_index(drop=True)
-    
-    last_date = history['날짜'].max()
-    last_price = float(history['가격'].iloc[-1])
-    
-    # 최근 30일 트렌드 계산
-    recent_prices = history['가격'].tail(30)
-    if len(recent_prices) >= 7:
-        ma7 = recent_prices.tail(7).mean()
-        ma30 = recent_prices.mean()
-        trend = (ma7 - ma30) / max(1.0, ma30) * 0.1  # 10% 가중치
-    else:
-        trend = 0.0
-    
-    preds = []
-    current = last_price
-    
-    for i in range(days_to_predict):
-        next_date = last_date + timedelta(days=i+1)
-        # 트렌드 + 약간의 랜덤 변동
-        change = trend + np.random.normal(0, 0.02)  # 2% 표준편차
-        current = current * (1 + change)
-        preds.append({'날짜': next_date, '가격': float(current)})
-    
-    return pd.DataFrame(preds)
+    """모든 품목에 대한 고급 가격 예측"""
+    # 모든 품목에 대해 고급 예측 모델 사용
+    return predict_advanced_price(item_name, history, days_to_predict)
 
-def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
+def predict_advanced_price(item_name: str, history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
+    """모든 품목에 대한 고급 가격 예측"""
     history = history.sort_values('날짜').reset_index(drop=True)
 
-    model = _load_model()
+    model = _load_model(item_name)
     if model is None:
-        print("모델이 없습니다. 학습을 시작합니다...")
-        train_model(history)
-        model = _load_model()
+        print(f"{item_name} 모델이 없습니다. 학습을 시작합니다...")
+        train_model(history, item_name)
+        model = _load_model(item_name)
 
     if model is not None:
-        # 완전한 데이터셋으로 작업
-        full_data = _load_all_data()
+        # 품목별 데이터셋으로 작업
+        full_data = _load_all_data(item_name)
         df_work = full_data.copy()
         preds = []
         # 스케일러 및 피처 컬럼명 로드
-        scaler = _load_scaler()
-        feature_cols = _load_feature_cols()
+        scaler = _load_scaler(item_name)
+        feature_cols = _load_feature_cols(item_name)
         
         # 피처 컬럼명이 없으면 새로 생성
         if feature_cols is None:
@@ -742,8 +752,9 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
                 try:
                     # DLinear 모델 로드
                     dlinear_model = DLinear(30, 1, len(feature_cols)).to(_get_device())
-                    if os.path.exists(DLINEAR_PATH):
-                        dlinear_model.load_state_dict(torch.load(DLINEAR_PATH))
+                    paths = _get_model_paths(item_name)
+                    if os.path.exists(paths['dlinear']):
+                        dlinear_model.load_state_dict(torch.load(paths['dlinear']))
                         dlinear_model.eval()
                         
                         # 시퀀스 생성
@@ -970,3 +981,7 @@ def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.D
         preds.append({'날짜': next_date, '가격': float(current)})
         last_date = next_date
     return pd.DataFrame(preds)
+
+def predict_rice_price(history: pd.DataFrame, days_to_predict: int = 14) -> pd.DataFrame:
+    """쌀 가격 예측 (하위 호환성)"""
+    return predict_advanced_price('쌀', history, days_to_predict)
