@@ -114,71 +114,51 @@ def _load_all_data() -> pd.DataFrame:
         return _CACHED_DATA.copy()
     
     try:
-        # 1) 환율 데이터
+        # 1) 환율 데이터 (원본 노트북과 동일한 방식)
         df_exchange = pd.read_csv('exchange_rate.csv')
-        df_exchange.columns = [str(c).strip() for c in df_exchange.columns]
-        if '종가' in df_exchange.columns and '환율' not in df_exchange.columns:
-            df_exchange.rename(columns={'종가': '환율'}, inplace=True)
-        if '날짜' not in df_exchange.columns:
-            df_exchange.rename(columns={df_exchange.columns[0]: '날짜'}, inplace=True)
-        df_exchange['날짜'] = pd.to_datetime(df_exchange['날짜'], errors='coerce')
-        if '환율' in df_exchange.columns:
-            df_exchange['환율'] = pd.to_numeric(df_exchange['환율'].astype(str).str.replace(',', ''), errors='coerce')
-        df_exchange = df_exchange.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+        df_exchange.columns = ['날짜', '환율']
+        df_exchange['날짜'] = pd.to_datetime(df_exchange['날짜'], format='%Y-%m-%d')
+        df_exchange['환율'] = pd.to_numeric(df_exchange['환율'].astype(str).str.replace(',', ''), errors='coerce')
+        df_exchange = df_exchange.groupby('날짜').mean().reset_index()
+        df_exchange = df_exchange.dropna(subset=['날짜'])
     except Exception:
         df_exchange = pd.DataFrame({'날짜': [pd.Timestamp.today()], '환율': [1300.0]})
 
     try:
-        # 2) 유가 데이터
+        # 2) 유가 데이터 (원본 노트북과 동일한 방식)
         df_oil = pd.read_csv('oil.csv', encoding='cp949')
-        df_oil.columns = [str(c).strip() for c in df_oil.columns]
-        if len(df_oil.columns) >= 2:
-            df_oil = df_oil.rename(columns={df_oil.columns[0]: '날짜', df_oil.columns[1]: '유가'})
-        if '날짜' not in df_oil.columns:
-            df_oil.rename(columns={df_oil.columns[0]: '날짜'}, inplace=True)
-        df_oil['날짜'] = pd.to_datetime(df_oil['날짜'], errors='coerce')
-        df_oil = df_oil.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+        df_oil.columns = ['날짜', '유가']
+        df_oil['날짜'] = pd.to_datetime(df_oil['날짜'], format='%Y-%m-%d')
+        df_oil = df_oil.groupby('날짜').mean().reset_index()
+        df_oil = df_oil.dropna(subset=['날짜'])
     except Exception:
         df_oil = pd.DataFrame({'날짜': [pd.Timestamp.today()], '유가': [80.0]})
 
     try:
-        # 3) 날씨 데이터
-        df_weather = pd.read_csv('top_weather_features.csv')
-        df_weather.columns = [str(c).strip() for c in df_weather.columns]
+        # 3) 날씨 데이터 (원본 노트북과 동일한 방식)
+        df_weather = pd.read_csv('top_weather_features.csv', encoding='cp949')
+        # 누적강수량 컬럼 제거
         if '누적강수량' in df_weather.columns:
             df_weather.drop('누적강수량', axis=1, inplace=True)
-        name_map = {
-            'date': '날짜', '일자': '날짜', '날짜': '날짜',
-            '누적평균기온': '누적평균기온', '평균기온': '누적평균기온', '기온': '누적평균기온', 'avgTa_cum': '누적평균기온',
-            '누적일조합': '누적일조합', '일조합': '누적일조합', '일조시간': '누적일조합', '누적일조시간': '누적일조합'
-        }
-        df_weather = df_weather.rename(columns={c: name_map.get(c, c) for c in df_weather.columns})
-        if '날짜' not in df_weather.columns:
-            df_weather.rename(columns={df_weather.columns[0]: '날짜'}, inplace=True)
-        if '누적평균기온' not in df_weather.columns:
-            df_weather['누적평균기온'] = np.nan
-        if '누적일조합' not in df_weather.columns:
-            df_weather['누적일조합'] = np.nan
-        df_weather['날짜'] = pd.to_datetime(df_weather['날짜'], errors='coerce')
-        if df_weather.index.name == '날짜' or ('날짜' in (list(df_weather.index.names) if df_weather.index.names is not None else [])):
-            df_weather = df_weather.reset_index()
-        df_weather = df_weather.loc[:, ~df_weather.columns.duplicated()]
-        df_weather = df_weather.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+        # 컬럼명을 직접 설정 (원본 노트북과 동일)
+        df_weather.columns = ['날짜', '누적평균기온', '누적일조합']
+        df_weather['날짜'] = pd.to_datetime(df_weather['날짜'], format='%Y-%m-%d')
+        df_weather = df_weather.groupby('날짜').mean().reset_index()
+        df_weather = df_weather.dropna(subset=['날짜'])
     except Exception:
         df_weather = pd.DataFrame({'날짜': [pd.Timestamp.today()], '누적평균기온': [15.0], '누적일조합': [6.0]})
 
     try:
-        # 4) 쌀 데이터 (실제 쌀 CSV 데이터 사용)
+        # 4) 쌀 데이터 (원본 노트북과 동일한 방식)
         df_rice = pd.read_csv('rice.csv')
-        df_rice.columns = [str(c).strip() for c in df_rice.columns]
-        if '가격(20kg)' in df_rice.columns:
-            df_rice.rename(columns={'가격(20kg)': '가격'}, inplace=True)
-        for col in ['품목명','품종명','시장명','지역명']:
-            if col in df_rice.columns:
-                df_rice.drop(columns=[col], inplace=True)
-        df_rice['날짜'] = pd.to_datetime(df_rice['날짜'], errors='coerce')
-        df_rice['가격'] = pd.to_numeric(df_rice['가격'], errors='coerce')
-        df_rice = df_rice.dropna(subset=['날짜']).groupby('날짜', as_index=False).mean(numeric_only=True)
+        # 불필요한 컬럼 제거
+        df_rice.drop(['품목명','품종명','시장명','지역명'], axis=1, inplace=True)
+        # 컬럼명 설정
+        df_rice.columns = ['날짜', '가격']
+        df_rice['날짜'] = pd.to_datetime(df_rice['날짜'], format='%Y-%m-%d')
+        df_rice['가격'] = df_rice['가격'].astype(float)
+        df_rice = df_rice.groupby('날짜').mean().reset_index()
+        df_rice = df_rice.dropna(subset=['날짜'])
     except Exception:
         df_rice = pd.DataFrame({'날짜': [pd.Timestamp.today()], '가격': [52000.0]})
 
