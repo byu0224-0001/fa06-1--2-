@@ -78,6 +78,35 @@ streamlit run "2차_프로젝트_대시보드.py"
 - 깐마늘 (20kg) 
 - 양파 (15kg)
 
+## 🚀 Streamlit Cloud 배포
+
+### 1. Streamlit Cloud에 배포하기
+
+1. [Streamlit Cloud](https://share.streamlit.io/)에 접속하여 GitHub 계정으로 로그인
+2. **New app** 버튼 클릭
+3. Repository 선택 및 메인 파일 경로 설정: `2차_프로젝트_대시보드.py`
+4. **Deploy!** 클릭
+
+### 2. API 키 설정
+
+배포 후 **Settings** → **Secrets**에서 다음 내용을 추가:
+
+```toml
+OPENAI_API_KEY = "your-actual-openai-api-key"
+```
+
+### 3. 환경 설정 확인
+
+- ✅ `.streamlit/secrets.toml`은 `.gitignore`에 포함되어 GitHub에 업로드되지 않습니다
+- ✅ `secrets.toml.template` 파일을 참고하여 로컬 개발 시 API 키를 설정하세요
+
+## 🔧 문제 해결
+
+### AI 구매 팁이 작동하지 않는 경우
+1. Streamlit Cloud의 **Secrets** 설정 확인
+2. API 키가 올바르게 설정되었는지 확인
+3. OpenAI API 사용량 및 크레딧 확인
+
 ## 라이선스
 
 이 프로젝트는 MIT 라이선스 하에 배포됩니다.

@@ -23,7 +23,8 @@ st.set_page_config(
 def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_days: int):
     """가격 예측 데이터를 기반으로 최적 구매 시점을 분석하는 LLM 리포트를 생성합니다."""
     try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        # OpenAI 클라이언트 초기화 (최신 방식)
+        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
         
         # 날짜 포맷을 'YYYY-MM-DD'로 변경하여 LLM에 전달
         df_report = df.copy()
@@ -47,7 +48,7 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         3. **팁**: 분석 결과를 바탕으로 사장님이 참고할 만한 간단한 팁을 한 문장으로 제안해주세요.
         4. 말투는 친절하고 단정적인 전문가 톤을 유지하고, 전체 내용을 3~4문장으로 요약해주세요.
         """
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "당신은 농산물 가격 예측 및 분석 전문가입니다."},
@@ -57,13 +58,33 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         )
         return response.choices[0].message.content
     except Exception as e:
-        if "api_key" in str(e).lower():
-            return "OpenAI API 키가 설정되지 않았습니다. `.streamlit/secrets.toml` 파일을 확인해주세요."
-        return f"리포트 생성 중 오류가 발생했습니다: {e}"
+        error_msg = str(e).lower()
+        if "api_key" in error_msg or "authentication" in error_msg:
+            return "❌ OpenAI API 키가 설정되지 않았거나 유효하지 않습니다. Streamlit Cloud의 Secrets 설정을 확인해주세요."
+        elif "quota" in error_msg or "billing" in error_msg:
+            return "❌ OpenAI API 사용량 한도를 초과했거나 결제 정보를 확인해주세요."
+        elif "model" in error_msg:
+            return "❌ 요청한 모델(gpt-4o)을 사용할 수 없습니다. 계정 권한을 확인해주세요."
+        else:
+            return f"❌ AI 구매 팁 생성 중 오류가 발생했습니다: {e}"
 
 def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
     """AI 구매 팁을 추가하는 함수 (LLM 기반)"""
     try:
+        # 디버깅 정보 표시 (Streamlit Cloud에서만)
+        if "streamlit.app" in st.get_option("server.baseUrlPath") or "share.streamlit.io" in st.get_option("server.baseUrlPath"):
+            with st.expander("🔧 디버깅 정보", expanded=False):
+                # Secrets 확인
+                try:
+                    api_key = st.secrets.get("OPENAI_API_KEY", "Not found")
+                    if api_key != "Not found":
+                        masked_key = api_key[:10] + "..." + api_key[-10:] if len(api_key) > 20 else "Too short"
+                        st.write(f"API 키 상태: ✅ 설정됨 ({masked_key})")
+                    else:
+                        st.write("API 키 상태: ❌ 설정되지 않음")
+                except Exception as e:
+                    st.write(f"API 키 확인 오류: {e}")
+        
         # LLM 기반 구매 타이밍 분석 리포트 생성
         report = generate_purchase_timing_report(prediction, item_name, predict_days)
         
