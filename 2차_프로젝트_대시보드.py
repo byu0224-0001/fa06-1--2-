@@ -249,44 +249,6 @@ def main_dashboard():
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
                 
-                # 최저가 구매 알림 버튼 (작은 크기)
-                if st.button(f"🔔 최저가 구매 알림", key=f"alert_{item_name}", width='stretch'):
-                    st.session_state[f"show_alert_{item_name}"] = True
-                    st.rerun()
-                
-                # 최저가 구매 알림 팝업창
-                if st.session_state.get(f"show_alert_{item_name}", False):
-                    # Streamlit의 container를 사용한 모달 팝업창
-                    with st.container():
-                        st.markdown("---")
-                        st.markdown(f"""
-                        <div style="
-                            background-color: #f0f2f6;
-                            padding: 20px;
-                            border-radius: 10px;
-                            border-left: 5px solid #ff6b6b;
-                            margin: 10px 0;
-                        ">
-                            <h4 style="margin: 0 0 10px 0; color: #333;">🔔 최저가 구매 알림</h4>
-                            <p style="margin: 0; font-size: 14px; color: #666;">
-                                <strong>{item_name}</strong>에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!
-                            </p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # 버튼들 (확인, 취소만 가로로 배치)
-                        col1, col2, col3 = st.columns([3, 1, 3])
-                        with col2:
-                            col_btn1, col_btn2 = st.columns([1, 1])
-                            with col_btn1:
-                                if st.button("확인", key=f"confirm_alert_{item_name}", use_container_width=True):
-                                    st.session_state[f"show_alert_{item_name}"] = False
-                                    st.rerun()
-                            with col_btn2:
-                                if st.button("취소", key=f"cancel_alert_{item_name}", use_container_width=True):
-                                    st.session_state[f"show_alert_{item_name}"] = False
-                                    st.rerun()
-                        st.markdown("---")
     st.divider()
 
     # --- 식자재 구매 섹션 ---
@@ -306,6 +268,46 @@ def main_dashboard():
             st.rerun()
     
     st.info("💡 AI 구매 팁을 참고하여 최적의 구매 시점을 선택하세요!")
+    
+    # 최저가 구매 알림 섹션
+    st.markdown("---")
+    
+    # 작은 벨 모양 알림
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔔 삼정캐대박맛집 사장님께 식자재 최저가 구매 알림 드려요!", 
+                    key="price_alert_notification", 
+                    use_container_width=True,
+                    help="클릭하여 최저가 구매 알림을 설정하세요"):
+            st.session_state["show_price_alert"] = True
+            st.rerun()
+    
+    # 최저가 구매 알림 팝업창
+    if st.session_state.get("show_price_alert", False):
+        with st.container():
+            st.markdown("---")
+            st.markdown("""
+            <div style="
+                background-color: #f0f2f6;
+                padding: 20px;
+                border-radius: 10px;
+                border-left: 5px solid #ff6b6b;
+                margin: 10px 0;
+            ">
+                <h4 style="margin: 0 0 10px 0; color: #333;">🔔 최저가 구매 알림</h4>
+                <p style="margin: 0; font-size: 14px; color: #666;">
+                    사장님이 사용하시는 식자재가 가장 저렴한 가격에 도달하면 알림을 보내드려요
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # 닫기 버튼
+            col1, col2, col3 = st.columns([3, 1, 3])
+            with col2:
+                if st.button("닫기", key="close_price_alert", use_container_width=True):
+                    st.session_state["show_price_alert"] = False
+                    st.rerun()
+            st.markdown("---")
 
 # ==============================================================================
 # 📊 원가 분석 페이지 함수
