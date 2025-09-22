@@ -320,6 +320,30 @@ def about_service_page():
     st.write("과거 데이터와 다양한 변수를 분석하여 미래 식자재 가격을 예측합니다. 사장님의 합리적인 구매 결정을 도와 원가 절감에 기여합니다.")
     st.subheader("농산물 선도 거래 서비스란?")
     st.write("미래의 가격을 예측하여, 가격이 오르기 전에 더 저렴한 가격으로 식자재를 미리 구매(계약)할 수 있도록 돕는 서비스입니다.")
+    st.subheader("💰 예약 구매의 장점")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **💵 비용 절약**
+        - AI 예측 기반 최적 가격에 구매
+        - 시장 변동성 리스크 최소화
+        """)
+    
+    with col2:
+        st.markdown("""
+        **📊 안정적 공급**
+        - 미리 확정된 가격으로 예산 관리
+        - 계절성 변동 대비
+        """)
+    
+    with col3:
+        st.markdown("""
+        **🎯 전략적 구매**
+        - 데이터 기반 의사결정
+        - 경쟁 우위 확보
+        """)
+
     st.divider()
     st.subheader("🤖 AI 경영 어드바이저 (출시 예정)")
     st.info("가게의 데이터를 기반으로 맞춤형 경영 컨설팅을 제공하는 AI 챗봇 서비스가 출시될 예정입니다. 기대해주세요!")
@@ -556,34 +580,7 @@ def reservation_page():
             st.rerun()
     
     st.title("📅 식자재 예약 구매하기")
-    st.markdown("핵심 수익 모델: 미래 가격 예측을 통한 예약 구매로 비용 절약")
-    st.divider()
-    
-    # 예약 구매 설명
-    st.subheader("💰 예약 구매의 장점")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        **💵 비용 절약**
-        - AI 예측 기반 최적 가격에 구매
-        - 시장 변동성 리스크 최소화
-        """)
-    
-    with col2:
-        st.markdown("""
-        **📊 안정적 공급**
-        - 미리 확정된 가격으로 예산 관리
-        - 계절성 변동 대비
-        """)
-    
-    with col3:
-        st.markdown("""
-        **🎯 전략적 구매**
-        - 데이터 기반 의사결정
-        - 경쟁 우위 확보
-        """)
-
+    st.markdown("미래 가격 예측을 통한 예약 구매로 비용 절약")
     st.divider()
     
     st.subheader("📋 예약 구매 상품 선택")
@@ -638,21 +635,14 @@ def reservation_page():
         with col2:
             quantity = st.number_input("수량", min_value=1, max_value=100, value=1)
         
-        # 6. 총 가격 계산 및 표시
+        # 6. 예약 구매 신청 버튼 (총 금액 포함)
         if current_price > 0:
             total_price = current_price * quantity
-            st.markdown("---")
-            st.markdown("### 💵 구매 금액 계산")
-            calc_col1, calc_col2, calc_col3 = st.columns(3)
-            with calc_col1:
-                st.metric("단가", f"{int(current_price):,}원")
-            with calc_col2:
-                st.metric("수량", f"{quantity}개")
-            with calc_col3:
-                st.metric("총 금액", f"{int(total_price):,}원")
-            st.markdown("---")
+            button_text = f"📅 {selected_item} {int(total_price):,}원 예약 구매"
+        else:
+            button_text = "📅 예약 구매 신청 (가격 정보 없음)"
         
-        if st.button("📅 예약 구매 신청", use_container_width=True):
+        if st.button(button_text, use_container_width=True):
             if current_price > 0:
                 total_price = current_price * quantity
                 st.success(f"{selected_item} ({unit}) {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
