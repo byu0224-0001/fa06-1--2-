@@ -627,7 +627,7 @@ def reservation_page():
             st.error(f"가격 정보 조회 중 오류가 발생했습니다: {e}")
             current_price = 0
         
-        st.markdown(f"### {icon} {selected_item} ({unit}) 예약 구매")
+        st.markdown(f"### {icon} {selected_item} 예약 구매")
         
         col1, col2 = st.columns(2)
         with col1:
