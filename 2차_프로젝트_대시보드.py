@@ -283,10 +283,10 @@ def cost_analysis_page():
     st.subheader("🧮 실시간 마진율 계산기")
     calc_cols = st.columns(2)
     with calc_cols[0]:
-        sales = st.number_input("월 목표 매출액 (원) - 15,000,000", value=15000000, step=100000)
-        food_cost = st.number_input("월 예상 식재료비 (원) - 5,250,000", value=5250000, step=50000, help="기본 값은 당사를 통해 구매한 값을 토대로 자동 기입됩니다.")
-        labor_cost = st.number_input("월 인건비 (원) - 3,000,000", value=3000000, step=100000)
-        rent_cost = st.number_input("월 임대료 (원) - 2,000,000", value=2000000, step=50000)
+        sales = st.number_input("월 목표 매출액 (원)", value=15000000, step=100000)
+        food_cost = st.number_input("월 예상 식재료비 (원)", value=5250000, step=50000, help="기본 값은 당사를 통해 구매한 값을 토대로 자동 기입됩니다.")
+        labor_cost = st.number_input("월 인건비 (원)", value=3000000, step=100000)
+        rent_cost = st.number_input("월 임대료 (원)", value=2000000, step=50000)
     with calc_cols[1]:
         st.write("") # 여백
         st.write("") # 여백
@@ -297,7 +297,7 @@ def cost_analysis_page():
             
             st.metric(label="예상 마진금액", value=f"{int(operating_profit):,} 원")
             st.metric(label="예상 마진율", value=f"{profit_margin:.2f} %")
-            
+    st.divider()
     # 2. 현재 실적 요약 (메인 페이지에서 이동)
     st.subheader("💰 현재 실적 요약")
     metric_cols = st.columns(2)
@@ -559,18 +559,42 @@ def reservation_page():
     st.markdown("핵심 수익 모델: 미래 가격 예측을 통한 예약 구매로 비용 절약")
     st.divider()
     
+    # 예약 구매 설명
     st.subheader("💰 예약 구매의 장점")
-    # (장점 설명 부분은 기존과 동일)
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        **💵 비용 절약**
+        - AI 예측 기반 최적 가격에 구매
+        - 시장 변동성 리스크 최소화
+        """)
+    
+    with col2:
+        st.markdown("""
+        **📊 안정적 공급**
+        - 미리 확정된 가격으로 예산 관리
+        - 계절성 변동 대비
+        """)
+    
+    with col3:
+        st.markdown("""
+        **🎯 전략적 구매**
+        - 데이터 기반 의사결정
+        - 경쟁 우위 확보
+        """)
+
     st.divider()
     
     st.subheader("📋 예약 구매 상품 선택")
     
     # 1. 상품의 '대표 이름'만 리스트로 관리합니다. (단위 정보 제거)
-    items = ["쌀", "깐마늘", "양파"]
+    items = ["쌀(20kg)", "깐마늘(20kg)", "양파(15kg)"]
     
     # 2. 아이콘과 단위 정보는 별도의 딕셔너리에서 관리합니다.
     item_icons = {"쌀": "🍚", "깐마늘": "🧄", "양파": "🧅"}
     item_units = {"쌀": "20kg", "깐마늘": "20kg", "양파": "15kg"}
+    item_backend_names = {"쌀(20kg)": "쌀", "깐마늘(20kg)": "깐마늘", "양파(15kg)": "양파"}
     
     # 3. selectbox에서는 '대표 이름'만 보여줍니다.
     selected_item = st.selectbox("예약 구매할 상품을 선택하세요:", items)
@@ -578,8 +602,33 @@ def reservation_page():
     if selected_item:
         # 4. 아이콘과 단위는 딕셔너리에서 '대표 이름'을 키로 안전하게 찾아옵니다.
         #    .get() 메서드를 사용하면 키가 없더라도 에러 대신 기본값을 반환하여 더 안정적입니다.
-        icon = item_icons.get(selected_item, "📦") 
-        unit = item_units.get(selected_item, "개")
+        backend_name = item_backend_names.get(selected_item, "쌀")
+        icon = item_icons.get(backend_name, "📦") 
+        unit = item_units.get(backend_name, "개")
+        
+        # 5. 당일 가격 조회 및 표시
+        try:
+            current_price_data = load_and_prepare_data(backend_name)
+            if not current_price_data.empty and len(current_price_data) > 0:
+                current_price = current_price_data['가격'].iloc[-1]
+                
+                # 당일 가격 표시 섹션
+                st.markdown("---")
+                st.markdown(f"### 💰 {backend_name} 당일 가격")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("현재 가격", f"{int(current_price):,}원")
+                with col2:
+                    st.metric("단위", unit)
+                with col3:
+                    st.metric("상태", "거래 가능")
+                st.markdown("---")
+            else:
+                st.warning(f"{backend_name}의 현재 가격 정보를 가져올 수 없습니다.")
+                current_price = 0
+        except Exception as e:
+            st.error(f"가격 정보 조회 중 오류가 발생했습니다: {e}")
+            current_price = 0
         
         st.markdown(f"### {icon} {selected_item} ({unit}) 예약 구매")
         
@@ -589,9 +638,28 @@ def reservation_page():
         with col2:
             quantity = st.number_input("수량", min_value=1, max_value=100, value=1)
         
+        # 6. 총 가격 계산 및 표시
+        if current_price > 0:
+            total_price = current_price * quantity
+            st.markdown("---")
+            st.markdown("### 💵 구매 금액 계산")
+            calc_col1, calc_col2, calc_col3 = st.columns(3)
+            with calc_col1:
+                st.metric("단가", f"{int(current_price):,}원")
+            with calc_col2:
+                st.metric("수량", f"{quantity}개")
+            with calc_col3:
+                st.metric("총 금액", f"{int(total_price):,}원")
+            st.markdown("---")
+        
         if st.button("📅 예약 구매 신청", use_container_width=True):
-            st.success(f"{selected_item} ({unit}) {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
-            st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
+            if current_price > 0:
+                total_price = current_price * quantity
+                st.success(f"{selected_item} ({unit}) {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
+                st.info(f"예상 결제 금액: {int(total_price):,}원 (단가: {int(current_price):,}원 × {quantity}개)")
+                st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
+            else:
+                st.error("가격 정보를 확인할 수 없어 예약 구매를 진행할 수 없습니다.")
 
 # 페이지 선택에 따라 해당 함수를 호출합니다.
 if st.session_state.page == 'main':
@@ -637,4 +705,3 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
