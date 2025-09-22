@@ -638,7 +638,7 @@ def reservation_page():
         # 6. 예약 구매 신청 버튼 (총 금액 포함)
         if current_price > 0:
             total_price = current_price * quantity
-            button_text = f"📅 {selected_item} {int(total_price):,}원 예약 구매"
+            button_text = f"{int(total_price):,}원 예약 구매"
         else:
             button_text = "📅 예약 구매 신청 (가격 정보 없음)"
         
