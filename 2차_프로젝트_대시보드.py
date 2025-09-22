@@ -287,7 +287,7 @@ def main_dashboard():
         with st.container():
             st.markdown("---")
             st.markdown("""
-            <div style="
+            <div id="price-alert-popup" style="
                 background-color: #f0f2f6;
                 padding: 20px;
                 border-radius: 10px;
@@ -308,6 +308,22 @@ def main_dashboard():
                     st.session_state["show_price_alert"] = False
                     st.rerun()
             st.markdown("---")
+            
+            # 자동 스크롤 JavaScript
+            st.markdown("""
+            <script>
+            // 팝업창이 나타날 때 자동으로 해당 위치로 스크롤
+            setTimeout(function() {
+                const popup = document.getElementById('price-alert-popup');
+                if (popup) {
+                    popup.scrollIntoView({ 
+                        behavior: 'smooth', 
+                        block: 'center' 
+                    });
+                }
+            }, 100);
+            </script>
+            """, unsafe_allow_html=True)
 
 # ==============================================================================
 # 📊 원가 분석 페이지 함수
