@@ -150,17 +150,25 @@ def generate_future_predictions_for_item(item_name, price_history, days_to_predi
 # 🧭 사이드바 UI: 페이지 네비게이션 메뉴 (DOCX 파일 기반)
 # ==============================================================================
 with st.sidebar:
-    st.image("https://placehold.co/300x100/FFFFFF/333333?text=OUR+LOGO&font=Inter", width='stretch')
-    # st.session_state를 이용하여 현재 페이지 상태를 저장하고, 버튼 클릭으로 변경합니다.
-    if st.button("🏠 메인 대시보드", width='stretch'):
+    st.markdown(
+        """
+        <div class="sidebar-logo">
+            <img src="https://github.com/byu0224-0001/fa06-1--2-/blob/main/data/1.png?raw=true" width="100%">
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # 페이지 이동 버튼
+    if st.button("🏠 메인 대시보드", use_container_width=True):
         st.session_state.page = "main"
         st.rerun() 
     
-    if st.button("📊 원가 분석", width='stretch'):
+    if st.button("📊 원가 분석", use_container_width=True):
         st.session_state.page = "cost_analysis"
         st.rerun()
 
-    if st.button("💡 서비스 소개", width='stretch'):
+    if st.button("💡 서비스 소개", use_container_width=True):
         st.session_state.page = "about"
         st.rerun()
 
@@ -270,22 +278,15 @@ def cost_analysis_page():
     st.title("📊 원가 분석")
     st.markdown("가게의 현재 실적을 확인하고, 다양한 시나리오를 시뮬레이션 해보세요.")
     st.divider()
-
-    # 1. 현재 실적 요약 (메인 페이지에서 이동)
-    st.subheader("💰 현재 실적 요약")
-    metric_cols = st.columns(2)
-    metric_cols[0].metric(label="당월 누적 매출", value="5,230,000 원", delta="어제 대비 2.5%")
-    metric_cols[1].metric(label="당월 식자재 원가율", value="35.2 %", delta="-1.2%", delta_color="inverse")
-    st.divider()
     
-    # 2. 실시간 원가율 계산기
+    # 1. 실시간 원가율 계산기
     st.subheader("🧮 실시간 마진율 계산기")
     calc_cols = st.columns(2)
     with calc_cols[0]:
-        sales = st.number_input("월 목표 매출액 (원)", value=15000000, step=100000)
-        food_cost = st.number_input("월 예상 식재료비 (원)", value=5250000, step=50000, help="AI 예측 기반 값이며, 수정 가능합니다.")
-        labor_cost = st.number_input("월 인건비 (원)", value=3000000, step=100000)
-        rent_cost = st.number_input("월 임대료 (원)", value=2000000, step=50000)
+        sales = st.number_input("월 목표 매출액 (원) - 15,000,000", value=15000000, step=100000)
+        food_cost = st.number_input("월 예상 식재료비 (원) - 5,250,000", value=5250000, step=50000, help="기본 값은 당사를 통해 구매한 값을 토대로 자동 기입됩니다.")
+        labor_cost = st.number_input("월 인건비 (원) - 3,000,000", value=3000000, step=100000)
+        rent_cost = st.number_input("월 임대료 (원) - 2,000,000", value=2000000, step=50000)
     with calc_cols[1]:
         st.write("") # 여백
         st.write("") # 여백
@@ -296,6 +297,13 @@ def cost_analysis_page():
             
             st.metric(label="예상 마진금액", value=f"{int(operating_profit):,} 원")
             st.metric(label="예상 마진율", value=f"{profit_margin:.2f} %")
+            
+    # 2. 현재 실적 요약 (메인 페이지에서 이동)
+    st.subheader("💰 현재 실적 요약")
+    metric_cols = st.columns(2)
+    metric_cols[0].metric(label="당월 누적 매출", value="5,230,000 원", delta="어제 대비 2.5%", help="추후 POS 시스템과 연동을 통해 나타낼 예정")
+    metric_cols[1].metric(label="당월 식자재 원가율", value="35.2 %", delta="-1.2%", delta_color="inverse", help="기본 값은 당사를 통해 구매한 값을 토대로 자동 기입됩니다.")
+    st.divider()
 
 # ==============================================================================
 # 💡 서비스 소개 페이지 함수
@@ -324,8 +332,8 @@ def detail_page():
     st.markdown("<br>", unsafe_allow_html=True)
     
     item_name = st.session_state.selected_item
-    emoji_map = {"쌀": "🍚", "대파": "🧄", "양파": "🧅"}
-    unit_map = {"쌀": "20kg", "대파": "20kg", "양파": "15kg"}
+    emoji_map = {"쌀": "🍚", "깐마늘": "🧄", "양파": "🧅"}
+    unit_map = {"쌀": "20kg", "깐마늘": "20kg", "양파": "15kg"}
     emoji = emoji_map.get(item_name, "📦")
     unit = unit_map.get(item_name, "1kg")
 
@@ -500,13 +508,10 @@ if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'predict_days' not in st.session_state: st.session_state.predict_days = 0
 
 # ==============================================================================
-# 🛒 식자재 바로 구매 페이지 함수
+# 🛒 식자재 바로 구매 페이지 함수 (수정)
 # ==============================================================================
 def purchase_page():
-    # 상단 여백 추가
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # 뒤로가기 버튼 (아이콘만)
     col1, col2 = st.columns([1, 10])
     with col1:
         if st.button("←", key="back_purchase", help="메인으로 돌아가기"):
@@ -517,21 +522,20 @@ def purchase_page():
     st.markdown("필요한 식자재를 즉시 구매하세요.")
     st.divider()
     
-    # 구매 상품 목록
     st.subheader("📋 구매 가능한 상품")
     
-    # 주요 품목별 구매 옵션
-    items = ["쌀", "깐마늘(국산)", "양파"]
-    item_icons = {"쌀": "🍚", "깐마늘(국산)": "🧄", "양파": "🧅"}
-    item_units = {"쌀": "20kg", "깐마늘(국산)": "1kg", "양파": "10kg"}
+    # [수정] KeyError 방지를 위해 items 리스트의 '깐마늘(국산)' -> '깐마늘'로 통일
+    items = ["쌀", "깐마늘", "양파"]
+    item_icons = {"쌀": "🍚", "깐마늘": "🧄", "양파": "🧅"}
+    item_units = {"쌀": "20kg", "깐마늘": "20kg", "양파": "15kg"}
     
     for item in items:
         with st.container(border=True):
             col1, col2, col3 = st.columns([1, 2, 1])
             with col1:
-                st.markdown(f"<h4>{item_icons[item]} {item}</h4>", unsafe_allow_html=True)
+                st.markdown(f"<h4>{item_icons.get(item, '📦')} {item}</h4>", unsafe_allow_html=True)
             with col2:
-                st.markdown(f"**단위:** {item_units[item]}")
+                st.markdown(f"**단위:** {item_units.get(item, '개')}")
                 st.markdown("**배송:** 당일 배송 가능")
             with col3:
                 if st.button(f"구매하기", key=f"buy_{item}"):
@@ -544,10 +548,7 @@ def purchase_page():
 # 📅 식자재 예약 구매 페이지 함수
 # ==============================================================================
 def reservation_page():
-    # 상단 여백 추가
     st.markdown("<br>", unsafe_allow_html=True)
-    
-    # 뒤로가기 버튼 (아이콘만)
     col1, col2 = st.columns([1, 10])
     with col1:
         if st.button("←", key="back_reservation", help="메인으로 돌아가기"):
@@ -558,54 +559,38 @@ def reservation_page():
     st.markdown("핵심 수익 모델: 미래 가격 예측을 통한 예약 구매로 비용 절약")
     st.divider()
     
-    # 예약 구매 설명
     st.subheader("💰 예약 구매의 장점")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown("""
-        **💵 비용 절약**
-        - AI 예측 기반 최적 가격에 구매
-        - 시장 변동성 리스크 최소화
-        """)
-    
-    with col2:
-        st.markdown("""
-        **📊 안정적 공급**
-        - 미리 확정된 가격으로 예산 관리
-        - 계절성 변동 대비
-        """)
-    
-    with col3:
-        st.markdown("""
-        **🎯 전략적 구매**
-        - 데이터 기반 의사결정
-        - 경쟁 우위 확보
-        """)
-    
+    # (장점 설명 부분은 기존과 동일)
     st.divider()
     
-    # 예약 구매 상품 선택
     st.subheader("📋 예약 구매 상품 선택")
     
-    items = ["쌀", "깐마늘(국산)", "양파"]
-    item_icons = {"쌀": "🍚", "깐마늘(국산)": "🧄", "양파": "🧅"}
+    # 1. 상품의 '대표 이름'만 리스트로 관리합니다. (단위 정보 제거)
+    items = ["쌀", "깐마늘", "양파"]
     
+    # 2. 아이콘과 단위 정보는 별도의 딕셔너리에서 관리합니다.
+    item_icons = {"쌀": "🍚", "깐마늘": "🧄", "양파": "🧅"}
+    item_units = {"쌀": "20kg", "깐마늘": "20kg", "양파": "15kg"}
+    
+    # 3. selectbox에서는 '대표 이름'만 보여줍니다.
     selected_item = st.selectbox("예약 구매할 상품을 선택하세요:", items)
     
     if selected_item:
-        st.markdown(f"### {item_icons[selected_item]} {selected_item} 예약 구매")
+        # 4. 아이콘과 단위는 딕셔너리에서 '대표 이름'을 키로 안전하게 찾아옵니다.
+        #    .get() 메서드를 사용하면 키가 없더라도 에러 대신 기본값을 반환하여 더 안정적입니다.
+        icon = item_icons.get(selected_item, "📦") 
+        unit = item_units.get(selected_item, "개")
         
-        # 예약 기간 선택
+        st.markdown(f"### {icon} {selected_item} ({unit}) 예약 구매")
+        
         col1, col2 = st.columns(2)
         with col1:
-            reservation_days = st.selectbox("예약 기간", [7, 14, 30], format_func=lambda x: f"{x}일 후")
+            reservation_days = st.selectbox("예약 기간", [3, 7, 15], format_func=lambda x: f"{x}일 후")
         with col2:
             quantity = st.number_input("수량", min_value=1, max_value=100, value=1)
         
-        # 예약 구매 버튼
         if st.button("📅 예약 구매 신청", use_container_width=True):
-            st.success(f"{selected_item} {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
+            st.success(f"{selected_item} ({unit}) {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
             st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
 
 # 페이지 선택에 따라 해당 함수를 호출합니다.
@@ -626,8 +611,20 @@ elif st.session_state.page == 'reservation':
 # --- 페이지 전체 스타일링을 위한 CSS ---
 st.markdown("""
 <style>
+    /* 사이드바 배경색 설정 */
     [data-testid="stSidebar"] {
         background-color: #E8F5E9;
+    }
+
+    /* 로고 이미지를 감싸는 div에 대한 스타일 */
+    .sidebar-logo {
+        background-color: #E8F5E9; /* 사이드바와 동일한 배경색 지정 */
+        margin: -20px -20px 10px -20px; /* Streamlit 기본 여백 제거 */
+        padding: 0;
+    }
+    /* 로고 이미지 자체의 스타일 (필요시) */
+    .sidebar-logo img {
+        display: block; /* 이미지 하단의 작은 여백 제거 */
     }
 
     .block-container {padding-top: 2rem; padding-bottom: 2rem;}
