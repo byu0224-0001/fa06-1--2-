@@ -95,22 +95,6 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
 def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
     """AI 구매 팁을 추가하는 함수 (LLM 기반)"""
     try:
-        # 디버깅 정보 표시
-        with st.expander("🔧 디버깅 정보", expanded=True):
-            # API 키 상태 확인
-            api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-            if api_key:
-                masked_key = api_key[:10] + "..." + api_key[-10:] if len(api_key) > 20 else "Too short"
-                st.write(f"API 키: ✅ 설정됨 ({masked_key})")
-            else:
-                st.write("API 키: ❌ 설정되지 않음")
-            
-            # 데이터 상태 확인
-            st.write(f"예측 데이터 길이: {len(prediction)}")
-            st.write(f"예측 데이터 컬럼명: {list(prediction.columns)}")
-            st.write(f"예측 데이터 샘플:")
-            st.write(prediction.head())
-        
         # LLM 기반 구매 타이밍 분석 리포트 생성
         report = generate_purchase_timing_report(prediction, item_name, predict_days)
         
@@ -120,9 +104,6 @@ def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
             
     except Exception as e:
         st.error(f"AI 구매 팁 생성 중 오류가 발생했습니다: {e}")
-        st.write(f"오류 상세: {str(e)}")
-        import traceback
-        st.write(f"스택 트레이스: {traceback.format_exc()}")
 
 # ==============================================================================
 # 데이터 시뮬레이션 함수 (백엔드 API 및 DB 연동으로 대체될 부분)
@@ -645,6 +626,10 @@ elif st.session_state.page == 'reservation':
 # --- 페이지 전체 스타일링을 위한 CSS ---
 st.markdown("""
 <style>
+    [data-testid="stSidebar"] {
+        background-color: #E8F5E9;
+    }
+
     .block-container {padding-top: 2rem; padding-bottom: 2rem;}
     h5 { margin-bottom: 0.5rem; font-weight: 600; color: #333; }
     h2 { margin-bottom: 0.2rem; }
