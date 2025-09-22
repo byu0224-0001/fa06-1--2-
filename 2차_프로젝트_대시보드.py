@@ -55,7 +55,7 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         4. 말투는 친절하고 단정적인 전문가 톤을 유지하고, 전체 내용을 3~4문장으로 요약해주세요.
         """
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "당신은 농산물 가격 예측 및 분석 전문가입니다."},
                 {"role": "user", "content": prompt}
@@ -70,44 +70,13 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         elif "quota" in error_msg or "billing" in error_msg:
             return "❌ OpenAI API 사용량 한도를 초과했거나 결제 정보를 확인해주세요."
         elif "model" in error_msg:
-            return "❌ 요청한 모델(gpt-4o)을 사용할 수 없습니다. 계정 권한을 확인해주세요."
+            return "❌ 요청한 모델(gpt-4o-mini)을 사용할 수 없습니다. 계정 권한을 확인해주세요."
         else:
             return f"❌ AI 구매 팁 생성 중 오류가 발생했습니다: {e}"
 
 def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
     """AI 구매 팁을 추가하는 함수 (LLM 기반)"""
     try:
-        # 디버깅 정보 표시
-        with st.expander("🔧 디버깅 정보", expanded=False):
-            # Secrets 확인
-            try:
-                # Streamlit secrets 확인
-                streamlit_key = st.secrets.get("OPENAI_API_KEY", "Not found")
-                # 환경 변수 확인
-                env_key = os.getenv("OPENAI_API_KEY", "Not found")
-                
-                if streamlit_key != "Not found":
-                    masked_key = streamlit_key[:10] + "..." + streamlit_key[-10:] if len(streamlit_key) > 20 else "Too short"
-                    st.write(f"Streamlit Secrets: ✅ 설정됨 ({masked_key})")
-                else:
-                    st.write("Streamlit Secrets: ❌ 설정되지 않음")
-                
-                if env_key != "Not found":
-                    masked_env_key = env_key[:10] + "..." + env_key[-10:] if len(env_key) > 20 else "Too short"
-                    st.write(f"환경 변수: ✅ 설정됨 ({masked_env_key})")
-                else:
-                    st.write("환경 변수: ❌ 설정되지 않음")
-                
-                # 최종 사용할 키 확인
-                final_key = streamlit_key if streamlit_key != "Not found" else env_key
-                if final_key != "Not found":
-                    st.write(f"최종 API 키: ✅ 사용 가능 (길이: {len(final_key)})")
-                else:
-                    st.write("최종 API 키: ❌ 사용 불가")
-                    
-            except Exception as e:
-                st.write(f"API 키 확인 오류: {e}")
-        
         # LLM 기반 구매 타이밍 분석 리포트 생성
         report = generate_purchase_timing_report(prediction, item_name, predict_days)
         
