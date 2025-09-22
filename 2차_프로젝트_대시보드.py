@@ -260,7 +260,22 @@ def main_dashboard():
                     st.markdown(f"""
                     <div class="modal-overlay">
                         <div class="modal-content">
-                            <h3 style="margin-top: 0; color: #333;">🔔 최저가 구매 알림</h3>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                <h3 style="margin: 0; color: #333;">🔔 최저가 구매 알림</h3>
+                                <div style="
+                                    background: none;
+                                    border: none;
+                                    font-size: 24px;
+                                    cursor: pointer;
+                                    color: #999;
+                                    padding: 0;
+                                    width: 30px;
+                                    height: 30px;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                ">×</div>
+                            </div>
                             <p style="margin: 20px 0; font-size: 16px; color: #666;">
                                 <strong>{item_name}</strong>에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!
                             </p>
@@ -272,7 +287,7 @@ def main_dashboard():
                     st.markdown('<div class="modal-buttons">', unsafe_allow_html=True)
                     col1, col2, col3 = st.columns([2, 1, 2])
                     with col2:
-                        col_btn1, col_btn2 = st.columns([1, 1])
+                        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
                         with col_btn1:
                             if st.button("확인", key=f"confirm_alert_{item_name}", use_container_width=True):
                                 st.session_state[f"show_alert_{item_name}"] = False
@@ -281,7 +296,30 @@ def main_dashboard():
                             if st.button("취소", key=f"cancel_alert_{item_name}", use_container_width=True):
                                 st.session_state[f"show_alert_{item_name}"] = False
                                 st.rerun()
+                        with col_btn3:
+                            if st.button("×", key=f"close_alert_{item_name}", use_container_width=True, help="닫기"):
+                                st.session_state[f"show_alert_{item_name}"] = False
+                                st.rerun()
                     st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    # 오버레이 클릭으로 모달 닫기 (투명한 버튼)
+                    st.markdown(f"""
+                    <div style="
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        z-index: 999;
+                        background: transparent;
+                    ">
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 오버레이 클릭 감지
+                    if st.button("", key=f"overlay_close_{item_name}", help="오버레이 클릭으로 닫기"):
+                        st.session_state[f"show_alert_{item_name}"] = False
+                        st.rerun()
     st.divider()
 
     # --- 식자재 구매 섹션 ---
