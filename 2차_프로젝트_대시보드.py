@@ -702,9 +702,11 @@ def reservation_page():
         if st.button(button_text, use_container_width=True):
             if current_price > 0:
                 total_price = current_price * quantity
-                st.success(f"{selected_item} ({unit}) {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
-                st.info(f"예상 결제 금액: {int(total_price):,}원 (단가: {int(current_price):,}원 × {quantity}개)")
-                st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
+                # st.info에 들어갈 텍스트도 별도의 변수로 먼저 만듭니다.
+                info_text = f"단가: {int(current_price):,}원 × {quantity}개"
+
+                st.success(f"{selected_item} {quantity}개를 {reservation_days}일 후 {int(total_price):,}원에 예약 구매 신청이 완료되었습니다!")
+                st.info(info_text)
             else:
                 st.error("가격 정보를 확인할 수 없어 예약 구매를 진행할 수 없습니다.")
 
