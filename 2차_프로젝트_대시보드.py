@@ -55,7 +55,7 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         4. 말투는 친절하고 단정적인 전문가 톤을 유지하고, 전체 내용을 3~4문장으로 요약해주세요.
         """
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "당신은 농산물 가격 예측 및 분석 전문가입니다."},
                 {"role": "user", "content": prompt}
@@ -617,7 +617,7 @@ def reservation_page():
             quantity = st.number_input("수량", min_value=1, max_value=100, value=1)
         
         # 예약 구매 버튼
-        if st.button("📅 예약 구매 신청", type="primary", use_container_width=True):
+        if st.button("📅 예약 구매 신청", use_container_width=True):
             st.success(f"{selected_item} {quantity}개를 {reservation_days}일 후 예약 구매 신청이 완료되었습니다!")
             st.info("AI가 최적의 가격을 찾아 자동으로 구매를 진행합니다.")
 
