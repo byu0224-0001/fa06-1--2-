@@ -274,20 +274,16 @@ def main_dashboard():
                         </div>
                         """, unsafe_allow_html=True)
                         
-                        # 버튼들
-                        col1, col2, col3 = st.columns([2, 1, 2])
+                        # 버튼들 (확인, 취소만 가로로 배치)
+                        col1, col2, col3 = st.columns([3, 1, 3])
                         with col2:
-                            col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+                            col_btn1, col_btn2 = st.columns([1, 1])
                             with col_btn1:
                                 if st.button("확인", key=f"confirm_alert_{item_name}", use_container_width=True):
                                     st.session_state[f"show_alert_{item_name}"] = False
                                     st.rerun()
                             with col_btn2:
                                 if st.button("취소", key=f"cancel_alert_{item_name}", use_container_width=True):
-                                    st.session_state[f"show_alert_{item_name}"] = False
-                                    st.rerun()
-                            with col_btn3:
-                                if st.button("×", key=f"close_alert_{item_name}", use_container_width=True, help="닫기"):
                                     st.session_state[f"show_alert_{item_name}"] = False
                                     st.rerun()
                         st.markdown("---")
