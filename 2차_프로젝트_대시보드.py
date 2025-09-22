@@ -256,23 +256,32 @@ def main_dashboard():
                 
                 # 최저가 구매 알림 팝업창
                 if st.session_state.get(f"show_alert_{item_name}", False):
-                    with st.container():
-                        st.markdown("---")
-                        st.info(f"🔔 **{item_name}**에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!")
-                        
-                        # 버튼들을 가운데 정렬하고 간격을 줄임
-                        col1, col2, col3 = st.columns([2, 1, 2])
-                        with col2:
-                            col_btn1, col_btn2 = st.columns([1, 1])
-                            with col_btn1:
-                                if st.button("확인", key=f"confirm_alert_{item_name}"):
-                                    st.session_state[f"show_alert_{item_name}"] = False
-                                    st.rerun()
-                            with col_btn2:
-                                if st.button("취소", key=f"cancel_alert_{item_name}"):
-                                    st.session_state[f"show_alert_{item_name}"] = False
-                                    st.rerun()
-                        st.markdown("---")
+                    # 모달 팝업창 구현 (CSS로 오버레이 효과)
+                    st.markdown(f"""
+                    <div class="modal-overlay">
+                        <div class="modal-content">
+                            <h3 style="margin-top: 0; color: #333;">🔔 최저가 구매 알림</h3>
+                            <p style="margin: 20px 0; font-size: 16px; color: #666;">
+                                <strong>{item_name}</strong>에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!
+                            </p>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Streamlit 버튼을 사용한 확인/취소 버튼 (모달 팝업창 내부)
+                    st.markdown('<div class="modal-buttons">', unsafe_allow_html=True)
+                    col1, col2, col3 = st.columns([2, 1, 2])
+                    with col2:
+                        col_btn1, col_btn2 = st.columns([1, 1])
+                        with col_btn1:
+                            if st.button("확인", key=f"confirm_alert_{item_name}", use_container_width=True):
+                                st.session_state[f"show_alert_{item_name}"] = False
+                                st.rerun()
+                        with col_btn2:
+                            if st.button("취소", key=f"cancel_alert_{item_name}", use_container_width=True):
+                                st.session_state[f"show_alert_{item_name}"] = False
+                                st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
     st.divider()
 
     # --- 식자재 구매 섹션 ---
@@ -725,6 +734,39 @@ st.markdown("""
         padding: 8px 12px !important;
         height: auto !important;
         min-height: 32px !important;
+    }
+    
+    /* 모달 팝업창 버튼 스타일 */
+    .modal-buttons button {
+        font-size: 14px !important;
+        padding: 10px 20px !important;
+        min-width: 80px !important;
+        border-radius: 8px !important;
+        margin: 0 5px !important;
+    }
+    
+    /* 모달 팝업창 오버레이 */
+    .modal-overlay {
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        background-color: rgba(0, 0, 0, 0.5) !important;
+        z-index: 1000 !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+    }
+    
+    .modal-content {
+        background-color: white !important;
+        padding: 30px !important;
+        border-radius: 15px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3) !important;
+        max-width: 400px !important;
+        width: 90% !important;
+        text-align: center !important;
     }
 </style>
 """, unsafe_allow_html=True)
