@@ -259,15 +259,19 @@ def main_dashboard():
                     with st.container():
                         st.markdown("---")
                         st.info(f"🔔 **{item_name}**에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!")
-                        col1, col2 = st.columns([1, 4])
-                        with col1:
-                            if st.button("확인", key=f"confirm_alert_{item_name}"):
-                                st.session_state[f"show_alert_{item_name}"] = False
-                                st.rerun()
+                        
+                        # 버튼들을 가운데 정렬하고 간격을 줄임
+                        col1, col2, col3 = st.columns([2, 1, 2])
                         with col2:
-                            if st.button("취소", key=f"cancel_alert_{item_name}"):
-                                st.session_state[f"show_alert_{item_name}"] = False
-                                st.rerun()
+                            col_btn1, col_btn2 = st.columns([1, 1])
+                            with col_btn1:
+                                if st.button("확인", key=f"confirm_alert_{item_name}"):
+                                    st.session_state[f"show_alert_{item_name}"] = False
+                                    st.rerun()
+                            with col_btn2:
+                                if st.button("취소", key=f"cancel_alert_{item_name}"):
+                                    st.session_state[f"show_alert_{item_name}"] = False
+                                    st.rerun()
                         st.markdown("---")
     st.divider()
 
