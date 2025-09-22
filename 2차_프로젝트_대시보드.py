@@ -49,7 +49,7 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         4. 말투는 친절하고 단정적인 전문가 톤을 유지하고, 전체 내용을 3~4문장으로 요약해주세요.
         """
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "당신은 농산물 가격 예측 및 분석 전문가입니다."},
                 {"role": "user", "content": prompt}
