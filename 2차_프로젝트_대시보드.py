@@ -248,6 +248,27 @@ def main_dashboard():
                 if st.button(f"상세 예측 보기", key=f"details_{item_name}", width='stretch'):
                     st.session_state.page, st.session_state.selected_item = 'detail', item_name
                     st.rerun()
+                
+                # 최저가 구매 알림 버튼 (작은 크기)
+                if st.button(f"🔔 최저가 구매 알림", key=f"alert_{item_name}", width='stretch'):
+                    st.session_state[f"show_alert_{item_name}"] = True
+                    st.rerun()
+                
+                # 최저가 구매 알림 팝업창
+                if st.session_state.get(f"show_alert_{item_name}", False):
+                    with st.container():
+                        st.markdown("---")
+                        st.info(f"🔔 **{item_name}**에 대한 최저가를 갱신할 때마다 구매 알림을 보내드려요!")
+                        col1, col2 = st.columns([1, 4])
+                        with col1:
+                            if st.button("확인", key=f"confirm_alert_{item_name}"):
+                                st.session_state[f"show_alert_{item_name}"] = False
+                                st.rerun()
+                        with col2:
+                            if st.button("취소", key=f"cancel_alert_{item_name}"):
+                                st.session_state[f"show_alert_{item_name}"] = False
+                                st.rerun()
+                        st.markdown("---")
     st.divider()
 
     # --- 식자재 구매 섹션 ---
@@ -318,9 +339,9 @@ def about_service_page():
 
     st.subheader("AI 가격 예측 시스템이란?")
     st.write("과거 데이터와 다양한 변수를 분석하여 미래 식자재 가격을 예측합니다. 사장님의 합리적인 구매 결정을 도와 원가 절감에 기여합니다.")
-    st.subheader("농산물 선도 거래 서비스란?")
+    st.subheader("농산물 예약 구매 서비스란?")
     st.write("미래의 가격을 예측하여, 가격이 오르기 전에 더 저렴한 가격으로 식자재를 미리 구매(계약)할 수 있도록 돕는 서비스입니다.")
-    st.subheader("💰 예약 구매의 장점")
+    st.subheader("예약 구매의 장점")
     col1, col2, col3 = st.columns(3)
     
     with col1:
@@ -627,7 +648,7 @@ def reservation_page():
             st.error(f"가격 정보 조회 중 오류가 발생했습니다: {e}")
             current_price = 0
         
-        st.markdown(f"### {icon} {selected_item} ({unit}) 예약 구매")
+        st.markdown(f"### {icon} {selected_item} 예약 구매")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -638,7 +659,7 @@ def reservation_page():
         # 6. 예약 구매 신청 버튼 (총 금액 포함)
         if current_price > 0:
             total_price = current_price * quantity
-            button_text = f"📅 {selected_item} {int(total_price):,}원 예약 구매"
+            button_text = f"총 {int(total_price):,}원 예약 구매"
         else:
             button_text = "📅 예약 구매 신청 (가격 정보 없음)"
         
@@ -692,6 +713,14 @@ st.markdown("""
         background-color: #FFFFFF; border: 1px solid #E0E0E0;
         border-radius: 10px; padding: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.04);
+    }
+    
+    /* 최저가 구매 알림 버튼 스타일 (작은 크기) */
+    button[data-testid="baseButton-secondary"][aria-label*="최저가 구매 알림"] {
+        font-size: 0.8rem !important;
+        padding: 8px 12px !important;
+        height: auto !important;
+        min-height: 32px !important;
     }
 </style>
 """, unsafe_allow_html=True)
