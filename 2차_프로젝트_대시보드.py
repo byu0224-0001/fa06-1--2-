@@ -34,6 +34,15 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
         
         # 날짜 포맷을 'YYYY-MM-DD'로 변경하여 LLM에 전달
         df_report = df.copy()
+        
+        # 컬럼명 확인 및 표준화
+        if '날짜' not in df_report.columns:
+            # 첫 번째 컬럼이 날짜인지 확인
+            if len(df_report.columns) >= 2:
+                df_report.columns = ['날짜', '가격']
+            else:
+                return "❌ 예측 데이터 형식이 올바르지 않습니다."
+        
         df_report['날짜'] = pd.to_datetime(df_report['날짜']).dt.strftime('%Y-%m-%d')
         report_data_string = df_report.to_string(index=False)
         
@@ -89,6 +98,7 @@ def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
             
             # 데이터 상태 확인
             st.write(f"예측 데이터 길이: {len(prediction)}")
+            st.write(f"예측 데이터 컬럼명: {list(prediction.columns)}")
             st.write(f"예측 데이터 샘플:")
             st.write(prediction.head())
         
