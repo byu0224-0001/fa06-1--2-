@@ -5,6 +5,7 @@ from rice_backend import get_item_history, predict_item_price, get_rice_history,
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import openai
+import os
 
 # ==============================================================================
 # Streamlit 페이지 기본 설정
@@ -24,7 +25,12 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
     """가격 예측 데이터를 기반으로 최적 구매 시점을 분석하는 LLM 리포트를 생성합니다."""
     try:
         # OpenAI 클라이언트 초기화 (최신 방식)
-        client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+        # Streamlit Cloud와 로컬 환경 모두 지원
+        api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return "❌ OpenAI API 키가 설정되지 않았습니다. Streamlit Cloud의 Secrets 설정을 확인해주세요."
+        
+        client = openai.OpenAI(api_key=api_key)
         
         # 날짜 포맷을 'YYYY-MM-DD'로 변경하여 LLM에 전달
         df_report = df.copy()
@@ -71,19 +77,36 @@ def generate_purchase_timing_report(df: pd.DataFrame, item_name: str, period_day
 def _add_ai_purchase_tip(item_name, history, prediction, predict_days):
     """AI 구매 팁을 추가하는 함수 (LLM 기반)"""
     try:
-        # 디버깅 정보 표시 (Streamlit Cloud에서만)
-        if "streamlit.app" in st.get_option("server.baseUrlPath") or "share.streamlit.io" in st.get_option("server.baseUrlPath"):
-            with st.expander("🔧 디버깅 정보", expanded=False):
-                # Secrets 확인
-                try:
-                    api_key = st.secrets.get("OPENAI_API_KEY", "Not found")
-                    if api_key != "Not found":
-                        masked_key = api_key[:10] + "..." + api_key[-10:] if len(api_key) > 20 else "Too short"
-                        st.write(f"API 키 상태: ✅ 설정됨 ({masked_key})")
-                    else:
-                        st.write("API 키 상태: ❌ 설정되지 않음")
-                except Exception as e:
-                    st.write(f"API 키 확인 오류: {e}")
+        # 디버깅 정보 표시
+        with st.expander("🔧 디버깅 정보", expanded=False):
+            # Secrets 확인
+            try:
+                # Streamlit secrets 확인
+                streamlit_key = st.secrets.get("OPENAI_API_KEY", "Not found")
+                # 환경 변수 확인
+                env_key = os.getenv("OPENAI_API_KEY", "Not found")
+                
+                if streamlit_key != "Not found":
+                    masked_key = streamlit_key[:10] + "..." + streamlit_key[-10:] if len(streamlit_key) > 20 else "Too short"
+                    st.write(f"Streamlit Secrets: ✅ 설정됨 ({masked_key})")
+                else:
+                    st.write("Streamlit Secrets: ❌ 설정되지 않음")
+                
+                if env_key != "Not found":
+                    masked_env_key = env_key[:10] + "..." + env_key[-10:] if len(env_key) > 20 else "Too short"
+                    st.write(f"환경 변수: ✅ 설정됨 ({masked_env_key})")
+                else:
+                    st.write("환경 변수: ❌ 설정되지 않음")
+                
+                # 최종 사용할 키 확인
+                final_key = streamlit_key if streamlit_key != "Not found" else env_key
+                if final_key != "Not found":
+                    st.write(f"최종 API 키: ✅ 사용 가능 (길이: {len(final_key)})")
+                else:
+                    st.write("최종 API 키: ❌ 사용 불가")
+                    
+            except Exception as e:
+                st.write(f"API 키 확인 오류: {e}")
         
         # LLM 기반 구매 타이밍 분석 리포트 생성
         report = generate_purchase_timing_report(prediction, item_name, predict_days)
