@@ -258,16 +258,8 @@ def main_dashboard():
     purchase_cols = st.columns(2)
     
     with purchase_cols[0]:
-        if st.button("🛒 식자재 바로 구매하기", width='stretch', use_container_width=True):
-            # 365올푸드마켓으로 이동
-            st.markdown("""
-            <script>
-            window.open('http://www.365allfoodmarket.com/', '_blank');
-            </script>
-            """, unsafe_allow_html=True)
-            
-            # 간단한 성공 메시지 (Streamlit 기본 기능 사용)
-            st.success("🛒 365올푸드마켓으로 이동합니다!")
+        # st.link_button을 사용하여 365올푸드마켓으로 직접 이동
+        st.link_button("🛒 식자재 바로 구매하기", "http://www.365allfoodmarket.com/", use_container_width=True)
     
     with purchase_cols[1]:
         if st.button("📅 식자재 예약 구매하기", width='stretch', use_container_width=True):
