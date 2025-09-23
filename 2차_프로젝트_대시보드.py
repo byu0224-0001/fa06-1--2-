@@ -259,8 +259,13 @@ def main_dashboard():
     
     with purchase_cols[0]:
         if st.button("🛒 식자재 바로 구매하기", width='stretch', use_container_width=True):
-            st.session_state.page = 'purchase'
-            st.rerun()
+            # 제휴 유통사 홈페이지로 이동
+            st.markdown("""
+            <script>
+            window.open('https://www.example-distributor.com', '_blank');
+            </script>
+            """, unsafe_allow_html=True)
+            st.success("🛒 식자재 유통 페이지로 이동합니다!")
     
     with purchase_cols[1]:
         if st.button("📅 식자재 예약 구매하기", width='stretch', use_container_width=True):
@@ -588,42 +593,6 @@ def detail_page():
 if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'predict_days' not in st.session_state: st.session_state.predict_days = 0
 
-# ==============================================================================
-# 🛒 식자재 바로 구매 페이지 함수 (수정)
-# ==============================================================================
-def purchase_page():
-    st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2 = st.columns([1, 10])
-    with col1:
-        if st.button("←", key="back_purchase", help="메인으로 돌아가기"):
-            st.session_state.page = 'main'
-            st.rerun()
-    
-    st.title("🛒 식자재 바로 구매하기")
-    st.markdown("필요한 식자재를 즉시 구매하세요.")
-    st.divider()
-    
-    st.subheader("📋 구매 가능한 상품")
-    
-    # [수정] KeyError 방지를 위해 items 리스트의 '깐마늘(국산)' -> '깐마늘'로 통일
-    items = ["쌀", "깐마늘", "양파"]
-    item_icons = {"쌀": "🍚", "깐마늘": "🧄", "양파": "🧅"}
-    item_units = {"쌀": "20kg", "깐마늘": "20kg", "양파": "15kg"}
-    
-    for item in items:
-        with st.container(border=True):
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col1:
-                st.markdown(f"<h4>{item_icons.get(item, '📦')} {item}</h4>", unsafe_allow_html=True)
-            with col2:
-                st.markdown(f"**단위:** {item_units.get(item, '개')}")
-                st.markdown("**배송:** 당일 배송 가능")
-            with col3:
-                if st.button(f"구매하기", key=f"buy_{item}"):
-                    st.success(f"{item} 구매 페이지로 이동합니다!")
-    
-    st.divider()
-    st.info("💡 AI 구매 팁을 참고하여 최적의 구매 시점을 선택하세요!")
 
 # ==============================================================================
 # 📅 식자재 예약 구매 페이지 함수
@@ -720,8 +689,6 @@ elif st.session_state.page == 'about':
 elif st.session_state.page == 'detail':
     # placeholder 코드를 삭제하고 실제 함수를 호출합니다.
     detail_page()
-elif st.session_state.page == 'purchase':
-    purchase_page()
 elif st.session_state.page == 'reservation':
     reservation_page()
 
