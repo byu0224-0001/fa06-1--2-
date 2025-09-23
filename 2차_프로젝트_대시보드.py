@@ -259,13 +259,44 @@ def main_dashboard():
     
     with purchase_cols[0]:
         if st.button("🛒 식자재 바로 구매하기", width='stretch', use_container_width=True):
-            # 제휴 유통사 홈페이지로 이동
+            # 365올푸드마켓으로 이동
             st.markdown("""
             <script>
-            window.open('https://www.example-distributor.com', '_blank');
+            window.open('http://www.365allfoodmarket.com/', '_blank');
             </script>
             """, unsafe_allow_html=True)
-            st.success("🛒 식자재 유통 페이지로 이동합니다!")
+            
+            # 5초 후 사라지는 메시지
+            st.markdown("""
+            <div id="success-message" style="
+                background-color: #d4edda;
+                color: #155724;
+                padding: 12px 20px;
+                border-radius: 8px;
+                border: 1px solid #c3e6cb;
+                margin: 10px 0;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            ">
+                <span>🛒</span>
+                <span>식자재 유통 페이지로 이동합니다!</span>
+            </div>
+            
+            <script>
+            // 5초 후 메시지 숨기기
+            setTimeout(function() {
+                const message = document.getElementById('success-message');
+                if (message) {
+                    message.style.transition = 'opacity 0.5s ease-out';
+                    message.style.opacity = '0';
+                    setTimeout(function() {
+                        message.style.display = 'none';
+                    }, 500);
+                }
+            }, 5000);
+            </script>
+            """, unsafe_allow_html=True)
     
     with purchase_cols[1]:
         if st.button("📅 식자재 예약 구매하기", width='stretch', use_container_width=True):
