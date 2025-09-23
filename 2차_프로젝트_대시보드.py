@@ -266,37 +266,8 @@ def main_dashboard():
             </script>
             """, unsafe_allow_html=True)
             
-            # 5초 후 사라지는 메시지
-            st.markdown("""
-            <div id="success-message" style="
-                background-color: #d4edda;
-                color: #155724;
-                padding: 12px 20px;
-                border-radius: 8px;
-                border: 1px solid #c3e6cb;
-                margin: 10px 0;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            ">
-                <span>🛒</span>
-                <span>식자재 유통 페이지로 이동합니다!</span>
-            </div>
-            
-            <script>
-            // 5초 후 메시지 숨기기
-            setTimeout(function() {
-                const message = document.getElementById('success-message');
-                if (message) {
-                    message.style.transition = 'opacity 0.5s ease-out';
-                    message.style.opacity = '0';
-                    setTimeout(function() {
-                        message.style.display = 'none';
-                    }, 500);
-                }
-            }, 5000);
-            </script>
-            """, unsafe_allow_html=True)
+            # 간단한 성공 메시지 (Streamlit 기본 기능 사용)
+            st.success("🛒 365올푸드마켓으로 이동합니다!")
     
     with purchase_cols[1]:
         if st.button("📅 식자재 예약 구매하기", width='stretch', use_container_width=True):
